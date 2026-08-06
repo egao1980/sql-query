@@ -128,8 +128,12 @@ Use BINDPARAM when you need a placeholder."
   (make-instance 'in-op :left (ensure-expr left)
                         :values (mapcar #'ensure-expr values)))
 
-(defun sql-like (left pattern)
-  (make-instance 'like-op :left (ensure-expr left) :pattern (ensure-expr pattern)))
+(defun sql-like (left pattern &key escape not)
+  (make-instance 'like-op
+                 :left (ensure-expr left)
+                 :pattern (ensure-expr pattern)
+                 :escape (when escape (ensure-expr escape))
+                 :not-p not))
 
 (defun sql-is-null (operand)
   (make-instance 'is-null-op :operand (ensure-expr operand)))
@@ -323,15 +327,25 @@ the driver when :value is absent. :type encodes that payload."
 (defun having (expr)
   (make-instance 'having-clause :expr (ensure-expr expr)))
 
+(defun %normalize-order-item (i)
+  "Return (list expr dir nulls). NULLS is NIL, :NULLS-FIRST, or :NULLS-LAST.
+  Items: column | (col :asc|:desc) | (col :asc|:desc :nulls-first|:nulls-last)."
+  (if (and (consp i) (not (typep i 'sql-node)))
+      (let ((expr (ensure-expr (first i)))
+            (dir :asc)
+            (nulls nil))
+        (dolist (x (rest i))
+          (cond
+            ((member x '(:asc :desc) :test #'eq) (setf dir x))
+            ((member x '(:nulls-first :nulls-last) :test #'eq) (setf nulls x))
+            (t (%err "bad order-by option ~s in ~s" x i))))
+        (list expr dir nulls))
+      (list (ensure-expr i) :asc nil)))
+
 (defun order-by (&rest items)
-  "Items are column refs, or (col :asc|:desc)."
+  "Items are column refs, or (col :asc|:desc [:nulls-first|:nulls-last])."
   (make-instance 'order-by-clause
-                 :items (mapcar (lambda (i)
-                                  (if (and (consp i) (not (typep i 'sql-node)))
-                                      (list (ensure-expr (first i))
-                                            (or (second i) :asc))
-                                      (list (ensure-expr i) :asc)))
-                                items)))
+                 :items (mapcar #'%normalize-order-item items)))
 
 (defun limit (n)
   (make-instance 'limit-clause :count n))
@@ -604,11 +618,7 @@ the driver when :value is absent. :type encodes that payload."
                  :expr (ensure-expr expr)
                  :window (make-instance 'window-spec
                                        :partition-by (mapcar #'ensure-expr (or partition-by nil))
-                                       :order-by (mapcar (lambda (i)
-                                                          (if (and (consp i) (not (typep i 'sql-node)))
-                                                              (list (ensure-expr (first i)) (or (second i) :asc))
-                                                              (list (ensure-expr i) :asc)))
-                                                        (or order-by nil))
+                                       :order-by (mapcar #'%normalize-order-item (or order-by nil))
                                        :frame frame)))
 
 (defun rows-frame (start &optional end)
@@ -629,16 +639,55 @@ the driver when :value is absent. :type encodes that payload."
                                   (mapcar #'ensure-expr (if (listp s) s (list s))))
                                 sets)))
 
-(defun primary-key (&rest columns)
-  (make-instance 'primary-key-constraint :columns (mapcar #'ensure-expr columns)))
+(defun %constraint-option-keys ()
+  '(:name :deferrable :initially))
 
-(defun unique-key (&rest columns)
-  (make-instance 'unique-constraint :columns (mapcar #'ensure-expr columns)))
+(defun %take-constraint-options (args)
+  "Split ARGS into positional items and a plist of :NAME/:DEFERRABLE/:INITIALLY."
+  (let ((positional nil)
+        (opts nil)
+        (rest args))
+    (loop while rest
+          do (let ((a (car rest)))
+               (if (and (keywordp a)
+                        (member a (%constraint-option-keys) :test #'eq)
+                        (cdr rest))
+                   (progn
+                     (push (cadr rest) opts)
+                     (push a opts)
+                     (setf rest (cddr rest)))
+                   (progn
+                     (push a positional)
+                     (setf rest (cdr rest))))))
+    (values (nreverse positional) opts)))
 
-(defun check (expr &key name)
-  (make-instance 'check-constraint :name name :expr (ensure-expr expr)))
+(defun primary-key (&rest args)
+  "PRIMARY KEY (cols…). Optional trailing :NAME / :DEFERRABLE / :INITIALLY."
+  (multiple-value-bind (cols opts) (%take-constraint-options args)
+    (make-instance 'primary-key-constraint
+                   :columns (mapcar #'ensure-expr cols)
+                   :name (getf opts :name)
+                   :deferrable (getf opts :deferrable)
+                   :initially (getf opts :initially))))
 
-(defun foreign-key (columns &key references on-delete on-update match name)
+(defun unique-key (&rest args)
+  "UNIQUE (cols…). Optional trailing :NAME / :DEFERRABLE / :INITIALLY."
+  (multiple-value-bind (cols opts) (%take-constraint-options args)
+    (make-instance 'unique-constraint
+                   :columns (mapcar #'ensure-expr cols)
+                   :name (getf opts :name)
+                   :deferrable (getf opts :deferrable)
+                   :initially (getf opts :initially))))
+
+(defun check (expr &key name deferrable initially)
+  (make-instance 'check-constraint
+                 :name name
+                 :expr (ensure-expr expr)
+                 :deferrable deferrable
+                 :initially initially))
+
+(defun foreign-key (columns &key references on-delete on-update match name
+                              deferrable initially)
   (destructuring-bind (ref-table &rest ref-cols) (if (listp references) references (list references))
     (make-instance 'foreign-key-constraint
                    :name name
@@ -647,7 +696,9 @@ the driver when :value is absent. :type encodes that payload."
                    :ref-columns (mapcar #'ensure-expr ref-cols)
                    :on-delete on-delete
                    :on-update on-update
-                   :match match)))
+                   :match match
+                   :deferrable deferrable
+                   :initially initially)))
 
 (defun add-constraint (constraint)
   (make-instance 'add-constraint-clause :constraint constraint))
@@ -823,3 +874,62 @@ the driver when :value is absent. :type encodes that payload."
 
 (defun lateral (query &optional alias)
   (make-instance 'lateral-subquery :query query :alias alias))
+
+;;; ---------------------------------------------------------------------------
+;;; CREATE TABLE AS + transaction control
+;;; ---------------------------------------------------------------------------
+
+(defun create-table-as (name query &key temporary if-not-exists columns)
+  "CREATE [TEMPORARY] TABLE name [(cols)] AS <query>."
+  (make-instance 'create-table-as-statement
+                 :table name
+                 :query query
+                 :temporary temporary
+                 :if-not-exists if-not-exists
+                 :columns (when columns
+                            (mapcar #'ensure-expr
+                                    (if (listp columns) columns (list columns))))))
+
+(defun %check-transaction-characteristics (isolation access-mode deferrable)
+  (when isolation
+    (unless (member isolation '(:read-uncommitted :read-committed
+                                :repeatable-read :serializable))
+      (%err "bad transaction isolation ~s" isolation)))
+  (when access-mode
+    (unless (member access-mode '(:read-only :read-write))
+      (%err "bad transaction access-mode ~s" access-mode)))
+  (when deferrable
+    (unless (or (eq deferrable t) (eq deferrable :not))
+      (%err "bad transaction deferrable ~s (expect T or :not)" deferrable))))
+
+(defun start-transaction (&key isolation access-mode deferrable)
+  "START TRANSACTION [ISOLATION LEVEL …] [READ ONLY|WRITE] [DEFERRABLE]."
+  (%check-transaction-characteristics isolation access-mode deferrable)
+  (make-instance 'start-transaction-statement
+                 :isolation isolation
+                 :access-mode access-mode
+                 :deferrable deferrable))
+
+(defun set-transaction (&key isolation access-mode deferrable)
+  "SET TRANSACTION [ISOLATION LEVEL …] [READ ONLY|WRITE] [DEFERRABLE]."
+  (%check-transaction-characteristics isolation access-mode deferrable)
+  (make-instance 'set-transaction-statement
+                 :isolation isolation
+                 :access-mode access-mode
+                 :deferrable deferrable))
+
+(defun sql-commit ()
+  "COMMIT."
+  (make-instance 'commit-statement))
+
+(defun sql-rollback (&key to)
+  "ROLLBACK [TO SAVEPOINT name]."
+  (make-instance 'rollback-statement :savepoint to))
+
+(defun sql-savepoint (name)
+  "SAVEPOINT name."
+  (make-instance 'savepoint-statement :name name))
+
+(defun sql-release-savepoint (name)
+  "RELEASE SAVEPOINT name."
+  (make-instance 'release-savepoint-statement :name name))
