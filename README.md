@@ -2,8 +2,8 @@
 
 Composable **CLOS** SQL DSL for [cl-stack](https://github.com/egao1980/cl-stack) — **SQLAlchemy Core** feature checklist (APIs stay Lisp).
 
-**Version:** `0.2.0` (OCI publish pending GitHub Actions minutes).  
-Nick: **`stack-sql-query`**. Brief: [sql.md](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/sql.md).
+**Version / OCI:** `0.2.0` (`ghcr.io/egao1980/cl-systems/sql-query:0.2.0`).  
+Nick: **`stack-sql-query`**. Brief: [sql.md](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/sql.md). Cookbook: [sql.md](https://github.com/egao1980/cl-stack/blob/main/docs/cookbooks/sql.md).
 
 | Project | Role |
 |---------|------|
