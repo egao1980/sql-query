@@ -236,7 +236,7 @@ NIL → NULL, T → TRUE, :FALSE → FALSE, numbers/strings/chars as SQL literal
       (t
        (write-string (if def
                          (sql-func-sql-name def)
-                         (ident-string name))
+                         (substitute #\_ #\- (ident-string name)))
                      stream)
        (write-char #\( stream)
        (loop for (a . rest) on (function-call-args node)
@@ -248,6 +248,7 @@ NIL → NULL, T → TRUE, :FALSE → FALSE, numbers/strings/chars as SQL literal
          (loop for ((expr dir) . rest) on (function-call-within-group node)
                do (emit-sql dialect expr stream ctx)
                   (when (eq dir :desc) (write-string " DESC" stream))
+                  (when (eq dir :asc) (write-string " ASC" stream))
                   (when rest (write-string ", " stream)))
          (write-char #\) stream))
        (when (function-call-filter node)
