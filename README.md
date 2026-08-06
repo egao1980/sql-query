@@ -33,6 +33,28 @@ Same protocol/backend split as `sql-protocol` / `sql-backend-*`.
 
 Default compile dialect is **ANSI** (`?`, `CHARACTER VARYING`, `GENERATED … AS IDENTITY`). Load a backend to register `:sqlite3` / `:postgres` for `dialect-for-connection`.
 
+## Extension registry (types & operators)
+
+Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
+
+```lisp
+(register-sql-type :money dialect
+  :sql "DECIMAL(19,4)"
+  :encode #'money-to-wire          ; Lisp → bind value
+  :decode #'money-from-wire        ; result → Lisp
+  :to-expr (lambda (d v) …)        ; Lisp → sql-node (preferred write)
+  :emit-value (lambda (d v s ctx) …)) ; or full emit control
+
+(typed value :money)               ; or (lit value :money) / (bindparam :x v :type :money)
+(sql-type-write dialect :money v)  ; → sql-expr
+(sql-type-read dialect :money db)  ; → Lisp
+
+(register-sql-op :->> :binary dialect :sql "->>")
+(ensure-expr '(:->> :payload "name"))
+```
+
+Default write without `:to-expr` / `:emit-value` is `CAST(? AS <sql>)` plus `:encode`. JSON/BSON stay out of core — `sql-query-postgres` seeds `:json` / `:jsonb` / `:array` and ops (`->`, `->>`, `@>`, …) with overridable encode/decode.
+
 ## Core surface (wave-1)
 
 `select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL · `sql-fragment` · `make-sql-table` / `create-table-from`.

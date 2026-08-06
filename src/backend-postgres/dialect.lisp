@@ -123,6 +123,49 @@
            (when rest (write-string ", " stream)))
   (write-char #\) stream))
 
+(defun %json-encode (value)
+  "Default JSONB/JSON wire form: already a string, else PRIN1 (override via register-sql-type)."
+  (if (stringp value) value (prin1-to-string value)))
+
+(defun %json-decode (value)
+  "Identity decode — real JSON parsers register their own :decode."
+  value)
+
+(defun register-postgres-extensions (dialect)
+  "Seed PG types/ops that know how to write Lisp values into SQL expressions.
+   No JSON library dependency — encode/decode are overridable hooks."
+  (register-sql-type :json dialect
+    :sql "JSON"
+    :encode #'%json-encode
+    :decode #'%json-decode)
+  (register-sql-type :jsonb dialect
+    :sql "JSONB"
+    :encode #'%json-encode
+    :decode #'%json-decode
+    ;; write path: CAST(? AS JSONB) with encoded wire (default emit-typed-value)
+    )
+  (register-sql-type :uuid dialect :sql "UUID")
+  (register-sql-type :inet dialect :sql "INET")
+  (register-sql-type :jsonb-array dialect :sql "JSONB[]")
+  (register-sql-type :array dialect
+    :sql (lambda (d spec)
+           (format nil "~a[]" (dialect-type-sql d (or (second spec) :text)))))
+  ;; Operators — parse builds binary-op; emit uses registered SQL text.
+  ;; Sharp / pipe names need |…| escapes so the reader does not treat #/?/| specially.
+  (register-sql-op :-> :binary dialect :sql "->")
+  (register-sql-op :->> :binary dialect :sql "->>")
+  (register-sql-op :|#>| :binary dialect :sql "#>")
+  (register-sql-op :|#>>| :binary dialect :sql "#>>")
+  (register-sql-op :@> :binary dialect :sql "@>")
+  (register-sql-op :<@ :binary dialect :sql "<@")
+  (register-sql-op :|?||| :binary dialect :sql "?|")
+  (register-sql-op :|?&| :binary dialect :sql "?&")
+  (register-sql-op :|||||| :binary dialect :sql "||")
+  dialect)
+
+(defmethod initialize-instance :after ((dialect postgres-dialect) &key)
+  (register-postgres-extensions dialect))
+
 (defun use-postgres-dialect ()
   "Register :postgres dialect (does not steal *SQL-DIALECT* unless unbound). Returns dialect."
   (let ((d (make-postgres-dialect)))

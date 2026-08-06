@@ -18,8 +18,9 @@
            (make-instance 'column-ref :name name))))
     (t (make-instance 'column-ref :name name :table table))))
 
-(defun lit (value)
-  (make-instance 'literal :value value))
+(defun lit (value &optional type)
+  "Literal VALUE. Optional TYPE (registered sql type) uses the type adapter on emit."
+  (make-instance 'literal :value value :sql-type type))
 
 (defun sql-raw (text)
   (check-type text string)
@@ -80,7 +81,8 @@
          (:case (apply #'sql-case args))
          (:cast (sql-cast (first args) (second args)))
          (otherwise
-          (%err "unknown expression operator ~s" op)))))))
+          (or (parse-registered-op op-key args)
+              (%err "unknown expression operator ~s" op))))))))
 
 (defun := (left right)
   (make-instance 'binary-op :op := :left (ensure-expr left) :right (ensure-expr right)))
@@ -180,8 +182,13 @@
 (defun label (expr name)
   (make-instance 'labeled-expr :expr (ensure-expr expr) :name name))
 
-(defun bindparam (name &optional (value nil valuep))
-  (make-instance 'bind-param :name name :value value :has-value valuep))
+(defun bindparam (name &optional (value nil valuep) &key type)
+  "Named bind. Optional TYPE encodes/emits VALUE via the dialect type adapter."
+  (make-instance 'bind-param
+                 :name name
+                 :value value
+                 :has-value valuep
+                 :sql-type type))
 
 (defun as-cte (query name &key recursive)
   (make-instance 'cte-node :name name :query query :recursive recursive))

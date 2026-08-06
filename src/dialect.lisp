@@ -1,7 +1,12 @@
 (in-package #:sql-query)
 
-(defclass sql-dialect () ()
-  (:documentation "Dialect protocol. Builtin concrete class = ANSI; vendors in backend systems."))
+(defclass sql-dialect ()
+  ((type-registry :initform (make-hash-table :test #'eq)
+                  :accessor dialect-type-registry)
+   (op-registry :initform (make-hash-table :test #'eq)
+                :accessor dialect-op-registry))
+  (:documentation "Dialect protocol. Builtin concrete class = ANSI; vendors in backend systems.
+TYPE-REGISTRY / OP-REGISTRY hold extension adapters (see register-sql-type / register-sql-op)."))
 
 (defclass emit-context ()
   ((params :initform (make-array 0 :adjustable t :fill-pointer 0)
@@ -33,7 +38,7 @@
     (if value "TRUE" "FALSE")))
 
 (defgeneric dialect-type-sql (dialect type-spec)
-  (:documentation "Render a column type spec to SQL text (ANSI defaults).")
+  (:documentation "Render a column type spec to SQL text (ANSI defaults + registry).")
   (:method ((dialect sql-dialect) type-spec)
     (cond
       ((null type-spec) "CHARACTER VARYING")
@@ -124,22 +129,29 @@
   (emit-ident dialect (column-ref-name node) stream))
 
 (defmethod emit-sql (dialect (node literal) stream ctx)
-  (declare (ignore dialect))
-  (let ((v (literal-value node)))
+  (let ((v (literal-value node))
+        (ty (literal-sql-type node)))
     (cond
       ((null v) (write-string "NULL" stream))
+      (ty (emit-typed-value dialect ty v stream ctx))
       (t
        (emit-placeholder (emit-context-dialect ctx) stream ctx)
        (push-param ctx v)))))
 
+(defmethod emit-sql (dialect (node typed-value) stream ctx)
+  (emit-typed-value dialect (typed-value-sql-type node) (typed-value-value node)
+                    stream ctx))
+
 (defun %emit-op (dialect op stream)
-  (declare (ignore dialect))
-  (write-string
-   (ecase op
-     (:= "=") (:!= "<>") (:< "<") (:> ">") (:<= "<=") (:>= ">=")
-     (:+ "+") (:- "-") (:* "*") (:/ "/")
-     (:and "AND") (:or "OR") (:not "NOT"))
-   stream))
+  (let ((def (find-sql-op dialect op)))
+    (if def
+        (write-string (sql-op-sql-text def) stream)
+        (write-string
+         (ecase op
+           (:= "=") (:!= "<>") (:< "<") (:> ">") (:<= "<=") (:>= ">=")
+           (:+ "+") (:- "-") (:* "*") (:/ "/")
+           (:and "AND") (:or "OR") (:not "NOT"))
+         stream))))
 
 (defmethod emit-sql (dialect (node between-op) stream ctx)
   (emit-sql dialect (between-operand node) stream ctx)
@@ -186,10 +198,15 @@
   (emit-ident dialect (labeled-name node) stream))
 
 (defmethod emit-sql (dialect (node bind-param) stream ctx)
-  (emit-placeholder dialect stream ctx)
-  (push-param ctx (if (bind-param-has-value node)
-                      (bind-param-value node)
-                      (bind-param-name node))))
+  (let ((ty (bind-param-sql-type node))
+        (raw (if (bind-param-has-value node)
+                 (bind-param-value node)
+                 (bind-param-name node))))
+    (if (and ty (bind-param-has-value node))
+        (emit-typed-value dialect ty raw stream ctx)
+        (progn
+          (emit-placeholder dialect stream ctx)
+          (push-param ctx (if ty (encode-sql-value dialect ty raw) raw))))))
 
 (defun emit-from-item (dialect item stream ctx &optional alias)
   (cond
@@ -343,31 +360,43 @@
   (emit-from-item dialect node stream ctx))
 
 (defmethod emit-sql (dialect (node binary-op) stream ctx)
-  (write-char #\( stream)
-  (emit-sql dialect (binary-op-left node) stream ctx)
-  (write-char #\Space stream)
-  (%emit-op dialect (binary-op-op node) stream)
-  (write-char #\Space stream)
-  (emit-sql dialect (binary-op-right node) stream ctx)
-  (write-char #\) stream))
+  (let ((def (find-sql-op dialect (binary-op-op node))))
+    (if (and def (sql-op-emit-fn def))
+        (funcall (sql-op-emit-fn def) dialect node stream ctx)
+        (progn
+          (write-char #\( stream)
+          (emit-sql dialect (binary-op-left node) stream ctx)
+          (write-char #\Space stream)
+          (%emit-op dialect (binary-op-op node) stream)
+          (write-char #\Space stream)
+          (emit-sql dialect (binary-op-right node) stream ctx)
+          (write-char #\) stream)))))
 
 (defmethod emit-sql (dialect (node unary-op) stream ctx)
-  (write-char #\( stream)
-  (%emit-op dialect (unary-op-op node) stream)
-  (write-char #\Space stream)
-  (emit-sql dialect (unary-op-operand node) stream ctx)
-  (write-char #\) stream))
+  (let ((def (find-sql-op dialect (unary-op-op node))))
+    (if (and def (sql-op-emit-fn def))
+        (funcall (sql-op-emit-fn def) dialect node stream ctx)
+        (progn
+          (write-char #\( stream)
+          (%emit-op dialect (unary-op-op node) stream)
+          (write-char #\Space stream)
+          (emit-sql dialect (unary-op-operand node) stream ctx)
+          (write-char #\) stream)))))
 
 (defmethod emit-sql (dialect (node nary-op) stream ctx)
-  (write-char #\( stream)
-  (loop for (op . rest) on (nary-op-operands node)
-        for first = t then nil
-        do (unless first
-             (write-char #\Space stream)
-             (%emit-op dialect (nary-op-op node) stream)
-             (write-char #\Space stream))
-        do (emit-sql dialect op stream ctx))
-  (write-char #\) stream))
+  (let ((def (find-sql-op dialect (nary-op-op node))))
+    (if (and def (sql-op-emit-fn def))
+        (funcall (sql-op-emit-fn def) dialect node stream ctx)
+        (progn
+          (write-char #\( stream)
+          (loop for (op . rest) on (nary-op-operands node)
+                for first = t then nil
+                do (unless first
+                     (write-char #\Space stream)
+                     (%emit-op dialect (nary-op-op node) stream)
+                     (write-char #\Space stream))
+                do (emit-sql dialect op stream ctx))
+          (write-char #\) stream)))))
 
 (defmethod emit-sql (dialect (node in-op) stream ctx)
   (emit-sql dialect (in-op-left node) stream ctx)

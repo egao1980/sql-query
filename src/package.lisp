@@ -80,7 +80,7 @@
    #:sql-case #:sql-cast #:nullif #:collate
    #:sql-func #:count #:coalesce
    #:exists #:subquery #:lateral
-   #:label #:bindparam #:sql-raw
+   #:label #:bindparam #:sql-raw #:typed #:typed-value
    #:over #:rows-frame #:range-frame
    #:rollup #:cube #:grouping-sets
    #:col #:lit #:ensure-expr #:parse-expr #:as-cte
@@ -102,6 +102,14 @@
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list
+
+   ;; extension registries (types own Lisp↔expression conversion)
+   #:sql-type-def #:sql-op-def
+   #:register-sql-type #:register-sql-op
+   #:find-sql-type #:find-sql-op #:find-sql-op-catalog
+   #:sql-type-write #:sql-type-read #:encode-sql-value
+   #:emit-typed-value #:registered-type-sql
+   #:*sql-op-catalog*
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique

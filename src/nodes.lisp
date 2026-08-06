@@ -28,7 +28,14 @@
    (table :initarg :table :reader column-ref-table :initform nil)))
 
 (defclass literal (sql-expr)
-  ((value :initarg :value :reader literal-value)))
+  ((value :initarg :value :reader literal-value)
+   (sql-type :initarg :sql-type :reader literal-sql-type :initform nil
+             :documentation "Optional registered type keyword/spec for encode/emit.")))
+
+(defclass typed-value (sql-expr)
+  ((value :initarg :value :reader typed-value-value)
+   (sql-type :initarg :sql-type :reader typed-value-sql-type))
+  (:documentation "Lisp value tagged with a registered SQL type; type adapter writes the expression."))
 
 (defclass binary-op (sql-expr)
   ((op :initarg :op :reader binary-op-op)
@@ -88,7 +95,8 @@
 (defclass bind-param (sql-expr)
   ((name :initarg :name :reader bind-param-name)
    (value :initarg :value :reader bind-param-value :initform nil)
-   (has-value :initarg :has-value :reader bind-param-has-value :initform nil)))
+   (has-value :initarg :has-value :reader bind-param-has-value :initform nil)
+   (sql-type :initarg :sql-type :reader bind-param-sql-type :initform nil)))
 
 (defclass subquery (sql-expr)
   ((query :initarg :query :reader subquery-query)
