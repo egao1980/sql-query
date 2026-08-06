@@ -643,7 +643,7 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 
 (defclass comment-on-statement (sql-statement)
   ((kind :initarg :kind :reader comment-on-kind
-         :documentation ":table | :column | :type | :domain | :schema | :index | :sequence | :function | :trigger")
+         :documentation ":table | :column | :type | :domain | :schema | :index | :sequence | :function | :trigger | :view")
    (name :initarg :name :reader comment-on-name
          :documentation "Object name, or (table column) for :column.")
    (comment :initarg :comment :reader comment-on-comment)))
