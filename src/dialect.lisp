@@ -388,10 +388,7 @@ when :value is omitted — it is not inlined into SQL."
     (when (window-order-by w)
       (when (window-partition-by w) (write-char #\Space stream))
       (write-string "ORDER BY " stream)
-      (loop for ((expr dir) . rest) on (window-order-by w)
-            do (emit-sql dialect expr stream ctx)
-               (when (eq dir :desc) (write-string " DESC" stream))
-               (when rest (write-string ", " stream))))
+      (emit-order-item-list dialect (window-order-by w) stream ctx))
     (when (window-frame w)
       (write-char #\Space stream)
       (write-string (ecase (window-frame-unit (window-frame w))
@@ -481,7 +478,10 @@ when :value is omitted — it is not inlined into SQL."
 (defmethod emit-sql (dialect (node like-op) stream ctx)
   (emit-sql dialect (like-op-left node) stream ctx)
   (write-string (if (like-op-not-p node) " NOT LIKE " " LIKE ") stream)
-  (emit-sql dialect (like-op-pattern node) stream ctx))
+  (emit-sql dialect (like-op-pattern node) stream ctx)
+  (when (like-op-escape node)
+    (write-string " ESCAPE " stream)
+    (emit-sql dialect (like-op-escape node) stream ctx)))
 
 (defmethod emit-sql (dialect (node is-null-op) stream ctx)
   (emit-sql dialect (is-null-op-operand node) stream ctx)
@@ -494,6 +494,22 @@ when :value is omitted — it is not inlined into SQL."
 
 (defun %clauses (stmt type)
   (remove-if-not (lambda (c) (typep c type)) (statement-clauses stmt)))
+
+(defun emit-order-item (dialect item stream ctx)
+  "ITEM is (expr dir) or (expr dir nulls) from %NORMALIZE-ORDER-ITEM."
+  (destructuring-bind (expr dir &optional nulls) item
+    (emit-sql dialect expr stream ctx)
+    (when (eq dir :desc) (write-string " DESC" stream))
+    (when nulls
+      (write-string (ecase nulls
+                      (:nulls-first " NULLS FIRST")
+                      (:nulls-last " NULLS LAST"))
+                    stream))))
+
+(defun emit-order-item-list (dialect items stream ctx)
+  (loop for (item . rest) on items
+        do (emit-order-item dialect item stream ctx)
+           (when rest (write-string ", " stream))))
 
 (defun emit-column-list (dialect items stream ctx)
   (if items
@@ -599,10 +615,7 @@ when :value is omitted — it is not inlined into SQL."
   (let ((o (%clause stmt 'order-by-clause)))
     (when o
       (write-string " ORDER BY " stream)
-      (loop for ((expr dir) . rest) on (order-by-items o)
-            do (emit-sql dialect expr stream ctx)
-               (when (eq dir :desc) (write-string " DESC" stream))
-               (when rest (write-string ", " stream)))))
+      (emit-order-item-list dialect (order-by-items o) stream ctx)))
   (emit-limit-offset dialect
                      (%clause stmt 'limit-clause)
                      (%clause stmt 'offset-clause)
@@ -720,6 +733,18 @@ when :value is omitted — it is not inlined into SQL."
                   (:no-action "NO ACTION"))
                 stream))
 
+(defun emit-constraint-deferrable (c stream)
+  (let ((d (table-constraint-deferrable c))
+        (i (table-constraint-initially c)))
+    (cond
+      ((eq d :not) (write-string " NOT DEFERRABLE" stream))
+      (d (write-string " DEFERRABLE" stream)))
+    (when i
+      (write-string (ecase i
+                      (:deferred " INITIALLY DEFERRED")
+                      (:immediate " INITIALLY IMMEDIATE"))
+                    stream))))
+
 (defun emit-table-constraint (dialect c stream ctx)
   (when (table-constraint-name c)
     (write-string "CONSTRAINT " stream)
@@ -757,7 +782,8 @@ when :value is omitted — it is not inlined into SQL."
        (emit-referential-action (foreign-key-on-delete c) stream))
      (when (foreign-key-on-update c)
        (write-string " ON UPDATE " stream)
-       (emit-referential-action (foreign-key-on-update c) stream)))))
+       (emit-referential-action (foreign-key-on-update c) stream))))
+  (emit-constraint-deferrable c stream))
 
 (defgeneric emit-create-table-extra (dialect extra stream ctx)
   (:documentation "Emit a CREATE TABLE extension node after the column list.")
@@ -1485,3 +1511,73 @@ when :value is omitted — it is not inlined into SQL."
 
 (defmethod emit-sql (dialect (stmt call-statement) stream ctx)
   (emit-call dialect stmt stream ctx))
+
+;;; ---------------------------------------------------------------------------
+;;; CREATE TABLE AS + transaction control
+;;; ---------------------------------------------------------------------------
+
+(defmethod emit-sql (dialect (stmt create-table-as-statement) stream ctx)
+  (write-string "CREATE " stream)
+  (when (create-table-as-temporary stmt)
+    (write-string "TEMPORARY " stream))
+  (write-string "TABLE " stream)
+  (when (create-table-as-if-not-exists stmt)
+    (write-string "IF NOT EXISTS " stream))
+  (emit-ident dialect (create-table-as-table stmt) stream)
+  (when (create-table-as-columns stmt)
+    (write-string " (" stream)
+    (emit-column-list dialect (create-table-as-columns stmt) stream ctx)
+    (write-char #\) stream))
+  (write-string " AS " stream)
+  (emit-sql dialect (create-table-as-query stmt) stream ctx))
+
+(defun emit-transaction-characteristics (stmt stream)
+  "Emit ISOLATION / access mode / DEFERRABLE fragments after START|SET TRANSACTION."
+  (when (transaction-isolation stmt)
+    (write-string " ISOLATION LEVEL " stream)
+    (write-string (ecase (transaction-isolation stmt)
+                    (:read-uncommitted "READ UNCOMMITTED")
+                    (:read-committed "READ COMMITTED")
+                    (:repeatable-read "REPEATABLE READ")
+                    (:serializable "SERIALIZABLE"))
+                  stream))
+  (when (transaction-access-mode stmt)
+    (write-string (ecase (transaction-access-mode stmt)
+                    (:read-only " READ ONLY")
+                    (:read-write " READ WRITE"))
+                  stream))
+  (let ((d (transaction-deferrable stmt)))
+    (cond
+      ((eq d :not) (write-string " NOT DEFERRABLE" stream))
+      (d (write-string " DEFERRABLE" stream)))))
+
+(defmethod emit-sql (dialect (stmt start-transaction-statement) stream ctx)
+  (declare (ignore dialect ctx))
+  (write-string "START TRANSACTION" stream)
+  (emit-transaction-characteristics stmt stream))
+
+(defmethod emit-sql (dialect (stmt set-transaction-statement) stream ctx)
+  (declare (ignore dialect ctx))
+  (write-string "SET TRANSACTION" stream)
+  (emit-transaction-characteristics stmt stream))
+
+(defmethod emit-sql (dialect (stmt commit-statement) stream ctx)
+  (declare (ignore dialect stmt ctx))
+  (write-string "COMMIT" stream))
+
+(defmethod emit-sql (dialect (stmt rollback-statement) stream ctx)
+  (declare (ignore ctx))
+  (write-string "ROLLBACK" stream)
+  (when (rollback-savepoint stmt)
+    (write-string " TO SAVEPOINT " stream)
+    (emit-ident dialect (rollback-savepoint stmt) stream)))
+
+(defmethod emit-sql (dialect (stmt savepoint-statement) stream ctx)
+  (declare (ignore ctx))
+  (write-string "SAVEPOINT " stream)
+  (emit-ident dialect (savepoint-name stmt) stream))
+
+(defmethod emit-sql (dialect (stmt release-savepoint-statement) stream ctx)
+  (declare (ignore ctx))
+  (write-string "RELEASE SAVEPOINT " stream)
+  (emit-ident dialect (release-savepoint-name stmt) stream))

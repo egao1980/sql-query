@@ -116,7 +116,7 @@ Also shipped: `CREATE CAST` / `DROP CAST`, `ALTER DOMAIN`, `ALTER COLUMN … SET
 
 ## Core surface (wave-1)
 
-`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL (incl. type/domain + typed tables) · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
+`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · `sql-like` (`:escape` / `:not`) · `order-by` NULLS FIRST/LAST · arithmetic · `for-update` · DDL (incl. type/domain + typed tables + `create-table-as` + DEFERRABLE constraints) · `start-transaction` / `set-transaction` / commit/rollback/savepoint · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
 
 SxQL is **not** the public API.
 

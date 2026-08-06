@@ -25,6 +25,12 @@
    #:delete-statement
    #:compound-select-statement
    #:create-table-statement
+   #:create-table-as-statement
+   #:start-transaction-statement
+   #:commit-statement
+   #:rollback-statement
+   #:savepoint-statement
+   #:release-savepoint-statement
    #:drop-table-statement
    #:alter-table-statement
    #:create-index-statement
@@ -56,6 +62,10 @@
    #:intersect #:intersect-all
    #:except #:except-all
    #:create-table
+   #:create-table-as
+   #:start-transaction #:set-transaction
+   #:sql-commit #:sql-rollback
+   #:sql-savepoint #:sql-release-savepoint
    #:drop-table
    #:alter-table
    #:create-index
@@ -121,6 +131,11 @@
    #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
    #:create-type-base-options
    #:create-table-of-type #:create-table-extras
+   #:create-table-as-table #:create-table-as-query
+   #:create-table-as-temporary #:create-table-as-if-not-exists
+   #:create-table-as-columns
+   #:table-constraint-name #:table-constraint-deferrable #:table-constraint-initially
+   #:like-op-escape #:like-op-not-p
    #:drop-type-name #:alter-type-name #:alter-type-actions
    #:create-domain-name #:create-domain-base-type
    #:drop-domain-name
