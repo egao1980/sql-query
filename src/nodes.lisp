@@ -85,6 +85,10 @@
   ((name :initarg :name :reader function-call-name)
    (args :initarg :args :reader function-call-args :initform nil)))
 
+(defclass array-literal (sql-expr)
+  ((items :initarg :items :reader array-literal-items :initform nil))
+  (:documentation "ARRAY[e1, e2, …] constructor (postgres / SQL:2003 array value)."))
+
 (defclass exists-op (sql-expr)
   ((query :initarg :query :reader exists-query)))
 

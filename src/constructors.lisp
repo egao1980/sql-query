@@ -168,6 +168,10 @@ Use BINDPARAM when you need a placeholder."
                                      (ensure-expr a)))
                                args)))
 
+(defun array-lit (&rest items)
+  "ARRAY[e1, e2, …] literal (postgres / dialects that support array constructors)."
+  (make-instance 'array-literal :items (mapcar #'ensure-expr items)))
+
 (defun count (&optional (expr :*))
   (sql-func :count expr))
 

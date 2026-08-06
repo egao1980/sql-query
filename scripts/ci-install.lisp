@@ -24,9 +24,7 @@
 
 (call-with-ci-muffles
  (lambda ()
-   (cl-repo:ensure-system-dependencies "sql-query"
-     :also-tests t
-     :with '("sql-query-sqlite3" "sql-query-postgres" "sql-backend-sqlite3"))))
+   (cl-repo:ensure-system-dependencies "sql-query" :also-tests t)))
 
 (format t "~&; ci: install phase done~%")
 (uiop:quit 0)

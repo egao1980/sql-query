@@ -4,11 +4,11 @@ Composable **CLOS** SQL DSL for [cl-stack](https://github.com/egao1980/cl-stack)
 
 Nick: **`stack-sql-query`**. Brief: [sql.md](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/sql.md).
 
-| System | Role |
-|--------|------|
-| `sql-query` | AST + constructors + **ANSI** dialect (only builtin) |
-| `sql-query-sqlite3` | SQLite dialect backend |
-| `sql-query-postgres` | PostgreSQL dialect backend |
+| Project | Role |
+|---------|------|
+| [`sql-query`](https://github.com/egao1980/sql-query) | AST + constructors + **ANSI** dialect (only builtin) |
+| [`sql-query-sqlite3`](https://github.com/egao1980/sql-query-sqlite3) | SQLite dialect backend (separate repo) |
+| [`sql-query-postgres`](https://github.com/egao1980/sql-query-postgres) | PostgreSQL dialect backend (separate repo) |
 
 Same protocol/backend split as `sql-protocol` / `sql-backend-*`.
 
@@ -31,51 +31,34 @@ Same protocol/backend split as `sql-protocol` / `sql-backend-*`.
   (list sql params))
 ```
 
-Default compile dialect is **ANSI** (`?`, `CHARACTER VARYING`, `GENERATED … AS IDENTITY`). Load a backend to register `:sqlite3` / `:postgres` for `dialect-for-connection`.
+Default compile dialect is **ANSI** (`?`, `CHARACTER VARYING`, `GENERATED … AS IDENTITY`). Load a dialect backend project to register `:sqlite3` / `:postgres` for `dialect-for-connection`.
 
-## Extension registry (types & operators)
+## Extension registry (types, operators, functions)
 
 Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
 
 ```lisp
 (register-sql-type :money dialect
   :sql "DECIMAL(19,4)"
-  :encode #'money-to-wire          ; Lisp → bind value
-  :decode #'money-from-wire        ; result → Lisp
-  :to-expr (lambda (d v) …)        ; Lisp → sql-node (preferred write)
-  :emit-value (lambda (d v s ctx) …)) ; or full emit control
+  :encode #'money-to-wire
+  :decode #'money-from-wire
+  :to-expr (lambda (d v) …)
+  :emit-value (lambda (d v s ctx) …))
 
-(typed value :money)               ; or (lit value :money) — inlined via type encode
-(bindparam :x v :type :money)      ; explicit placeholder (+ encode)
-(bindparam :lim :default 10)       ; ? with params=(10) for prepare/execute
-(sql-type-write dialect :money v)  ; → sql-expr
-(sql-type-read dialect :money db)  ; → Lisp
-
+(typed value :money)
+(bindparam :x v :type :money)
+(bindparam :lim :default 10)
 (register-sql-op :->> :binary dialect :sql "->>")
-(ensure-expr '(:->> :payload "name"))
+(register-sql-func :jsonb-set dialect :sql "jsonb_set")
 ```
 
-**Literals vs params:** `lit` / bare values always emit SQL literal text (typed → encode then literal/`CAST`). Placeholders (`?` / `$n`) only from `bindparam` or `sql-fragment` `?` slots.
+**Literals vs params:** `lit` / bare values always emit SQL literal text. Placeholders only from `bindparam` or `sql-fragment`.
+
+Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core also has `array-lit`.
 
 ## Procedural SQL (two layers)
 
-**Layer 1** — SQL-shaped nodes (`proc-if`, `proc-setf`, `proc-while`, `proc-loop`, `proc-let`, …) map 1–2–1 onto SQL/PSM / plpgsql text via `emit-sql`.
-
-**Layer 2** — lispy `body` macro expands CL-shaped forms into layer 1:
-
-```lisp
-(create-procedure :bump
-  (params (in :by :integer) (inout :n :integer))
-  (body
-   (let ((tmp :integer 0))
-     (if (:= :n 0)
-         (setf :n :by)
-         (setf :n (:+ :n :by)))
-     (loop :while (:< :tmp 3) :do (setf :tmp (:+ :tmp 1)))
-     (when (:> :n 1000) (return)))))
-```
-
-Use `make-body` + `proc-*` when building ASTs programmatically. Sqlite: unsupported.
+**Layer 1** — SQL-shaped nodes (`proc-if`, `proc-setf`, …) · **Layer 2** — lispy `body` macro. Postgres plpgsql overrides live in `sql-query-postgres`. Sqlite: unsupported.
 
 ## Core surface (wave-1)
 
@@ -87,9 +70,12 @@ SxQL is **not** the public API.
 
 First-party Rove suites (not vendored NIST/sqltest/slt):
 
-- `tests/ansi-compliance.lisp` — ANSI/ISO Foundation **emit** coverage + corner cases + negative vendorisms
+- `tests/ansi-compliance.lisp` — ANSI emit coverage
 - `tests/sql-query-test.lisp` — Core DSL smoke
-- `tests/dialect-backend-test.lisp` — sqlite3 / postgres backends
+- `tests/extension-registry-test.lisp` — type/op registry
+- `tests/procedure-test.lisp` — ANSI SQL/PSM procedural
+
+Dialect backend tests live in `sql-query-sqlite3` / `sql-query-postgres`.
 
 ```bash
 ros -e '(asdf:test-system "sql-query")' -q
