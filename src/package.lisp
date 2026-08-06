@@ -53,7 +53,8 @@
    #:except #:except-all
    #:create-table
    #:create-table-as
-   #:start-transaction #:sql-commit #:sql-rollback
+   #:start-transaction #:set-transaction
+   #:sql-commit #:sql-rollback
    #:sql-savepoint #:sql-release-savepoint
    #:drop-table
    #:alter-table

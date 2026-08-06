@@ -153,6 +153,30 @@
                       "BETWEEN 1 AND 10" "IN (1, 2, 3)" "LIKE 'a%'" "SIMILAR TO '[A-Z]+'")
     (ok (null (%params stmt)))))
 
+(deftest ansi-like-escape-and-not-like
+  (let ((sql (%sql (select (columns :id)
+                           (from :t)
+                           (where (sql-and
+                                   (sql-like :name "%\\_%" :escape "\\")
+                                   (sql-like :code "x%" :escape "!" :not t)))))))
+    (%assert-contains sql "LIKE" "ESCAPE" "NOT LIKE"
+                      "LIKE '%\\_%' ESCAPE '\\'"
+                      "NOT LIKE 'x%' ESCAPE '!'")))
+
+(deftest ansi-order-by-nulls-first-last
+  (let ((sql (%sql (select (columns :id)
+                           (from :t)
+                           (order-by '(:name :asc :nulls-first)
+                                     '(:age :desc :nulls-last))))))
+    (%assert-contains sql "ORDER BY" "NULLS FIRST" "NULLS LAST" "DESC")))
+
+(deftest ansi-window-order-by-nulls
+  (let ((sql (%sql (select (columns
+                            (over (count :*)
+                                  :order-by (list '(:salary :desc :nulls-last))))
+                           (from :emp)))))
+    (%assert-contains sql "OVER (" "ORDER BY" "DESC" "NULLS LAST")))
+
 (deftest ansi-quantified-comparisons
   (let* ((sub (select (columns :id) (from :u)))
          (sql (%sql (select (columns :id)
@@ -298,6 +322,55 @@
                       "PRIMARY KEY" "UNIQUE (" "FOREIGN KEY" "REFERENCES"
                       "ON DELETE CASCADE" "ON UPDATE SET NULL" "MATCH SIMPLE"
                       "CONSTRAINT" "CHECK (")))
+
+(deftest ansi-constraint-deferrable
+  (let ((sql (%sql (create-table :child
+                      (column :id :type :integer)
+                      (column :parent-id :type :integer)
+                      (primary-key :id :deferrable t :initially :immediate)
+                      (foreign-key '(:parent-id)
+                                   :references '(:parent :id)
+                                   :name :fk-parent
+                                   :deferrable t
+                                   :initially :deferred)
+                      (unique-key :parent-id :deferrable :not)
+                      (check (:> :id 0) :name :chk-id :deferrable t :initially :deferred)))))
+    (%assert-contains sql
+                      "PRIMARY KEY" "DEFERRABLE" "INITIALLY IMMEDIATE"
+                      "FOREIGN KEY" "INITIALLY DEFERRED"
+                      "UNIQUE (" "NOT DEFERRABLE"
+                      "CHECK (")))
+
+(deftest ansi-create-table-as
+  (let ((sql (%sql (create-table-as :archive
+                                    (select (columns :id :name) (from :users))
+                                    :temporary t
+                                    :columns '(:id :name)))))
+    (%assert-contains sql
+                      "CREATE TEMPORARY TABLE" "AS" "SELECT"
+                      "\"archive\"" "FROM")))
+
+(deftest ansi-transaction-control
+  (%assert-contains (%sql (start-transaction)) "START TRANSACTION")
+  (%assert-contains (%sql (start-transaction :isolation :serializable
+                                             :access-mode :read-only
+                                             :deferrable t))
+                    "START TRANSACTION"
+                    "ISOLATION LEVEL SERIALIZABLE"
+                    "READ ONLY"
+                    "DEFERRABLE")
+  (%assert-contains (%sql (set-transaction :isolation :read-committed
+                                           :access-mode :read-write
+                                           :deferrable :not))
+                    "SET TRANSACTION"
+                    "ISOLATION LEVEL READ COMMITTED"
+                    "READ WRITE"
+                    "NOT DEFERRABLE")
+  (%assert-contains (%sql (sql-commit)) "COMMIT")
+  (%assert-contains (%sql (sql-rollback)) "ROLLBACK")
+  (%assert-contains (%sql (sql-savepoint :sp1)) "SAVEPOINT")
+  (%assert-contains (%sql (sql-rollback :to :sp1)) "ROLLBACK TO SAVEPOINT")
+  (%assert-contains (%sql (sql-release-savepoint :sp1)) "RELEASE SAVEPOINT"))
 
 (deftest ansi-alter-table-actions
   (let ((sql (%sql (alter-table :t

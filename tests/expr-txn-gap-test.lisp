@@ -64,6 +64,20 @@
 
 (deftest transaction-statements
   (%assert-contains (%sql (start-transaction)) "START TRANSACTION")
+  (%assert-contains (%sql (start-transaction :isolation :serializable
+                                             :access-mode :read-only
+                                             :deferrable t))
+                    "START TRANSACTION"
+                    "ISOLATION LEVEL SERIALIZABLE"
+                    "READ ONLY"
+                    "DEFERRABLE")
+  (%assert-contains (%sql (set-transaction :isolation :read-committed
+                                           :access-mode :read-write
+                                           :deferrable :not))
+                    "SET TRANSACTION"
+                    "ISOLATION LEVEL READ COMMITTED"
+                    "READ WRITE"
+                    "NOT DEFERRABLE")
   (%assert-contains (%sql (sql-commit)) "COMMIT")
   (%assert-contains (%sql (sql-rollback)) "ROLLBACK")
   (%assert-contains (%sql (sql-rollback :to :sp1))
