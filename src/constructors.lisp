@@ -446,25 +446,47 @@ the driver when :value is absent. :type encodes that payload."
   (make-instance 'delete-statement :table table :clauses clauses))
 
 (defun create-table (table &rest args)
+  "CREATE TABLE.
+
+  Keywords: :IF-NOT-EXISTS, :OF type (typed table), :EXTRAS (list of extension nodes).
+  Also accepts COLUMN-DEF, TABLE-CONSTRAINT, and any SQL-NODE as an open extension
+  (stored in CREATE-TABLE-EXTRAS — dialects emit via EMIT-CREATE-TABLE-EXTRA)."
   (let ((if-not-exists nil)
+        (of-type nil)
         (cols nil)
-        (constraints nil))
-    (loop for a in args
-          do (cond
-               ((eq a :if-not-exists) (setf if-not-exists t))
-               ((typep a 'column-def) (push a cols))
-               ((typep a 'table-constraint) (push a constraints))
-               (t (%err "create-table: unexpected ~s" a))))
+        (constraints nil)
+        (extras nil)
+        (rest args))
+    (loop while rest
+          do (let ((a (pop rest)))
+               (cond
+                 ((eq a :if-not-exists) (setf if-not-exists t))
+                 ((eq a :of)
+                  (setf of-type (pop rest))
+                  (unless of-type (%err "create-table :of needs a type name")))
+                 ((eq a :extras)
+                  (let ((xs (pop rest)))
+                    (setf extras (append extras (if (listp xs) xs (list xs))))))
+                 ((and (consp a) (eq (first a) :of))
+                  (setf of-type (second a)))
+                 ((typep a 'column-def) (push a cols))
+                 ((typep a 'table-constraint) (push a constraints))
+                 ((typep a 'sql-node) (push a extras))
+                 (t (%err "create-table: unexpected ~s" a)))))
     (make-instance 'create-table-statement
                    :table table
                    :columns (nreverse cols)
                    :constraints (nreverse constraints)
+                   :of-type of-type
+                   :extras (nreverse extras)
                    :if-not-exists if-not-exists)))
 
 (defun drop-table (table &key if-exists)
   (make-instance 'drop-table-statement :table table :if-exists if-exists))
 
 (defun alter-table (table &rest actions)
+  "ALTER TABLE. ACTIONS are clause nodes — core or dialect extensions.
+  Emission is open via EMIT-ALTER-TABLE-ACTION (no closed typecase)."
   (make-instance 'alter-table-statement :table table :actions actions))
 
 (defun create-index (name &rest args)
@@ -724,35 +746,39 @@ the driver when :value is absent. :type encodes that payload."
               (t (%err "type attribute expects type-attribute or (name type), got ~s" a))))
           attrs))
 
-(defun create-type (name &key as attributes enum if-not-exists)
+(defun create-type (name &key as attributes enum if-not-exists kind base-options
+                           &allow-other-keys)
   "CREATE TYPE.
 
   Distinct (ANSI):   (create-type :euros :as :numeric)
-  Structured (ANSI): (create-type :addr :attributes (list (type-attribute :city :text) …))
-                     or :attributes '((:city :text) (:zip :text))
+  Structured (ANSI): (create-type :addr :attributes '((:city :text) …))
   Enum (postgres):   (create-type :mood :enum '(\"sad\" \"ok\" \"happy\"))
+  Base (postgres):   (create-type :complex :kind :base :base-options '(:input … :output …))
 
-  Exactly one of :AS, :ATTRIBUTES, or :ENUM."
-  (let ((n (count-if #'identity (list as attributes enum))))
-    (unless (= n 1)
-      (%err "create-type requires exactly one of :as, :attributes, or :enum")))
-  (cond
-    (as
-     (make-instance 'create-type-statement
-                    :name name :kind :distinct :base-type as
-                    :if-not-exists if-not-exists))
-    (attributes
-     (make-instance 'create-type-statement
-                    :name name :kind :structured
-                    :attributes (%normalize-type-attributes attributes)
-                    :if-not-exists if-not-exists))
-    (t
-     (make-instance 'create-type-statement
-                    :name name :kind :enum
-                    :enum-labels (mapcar (lambda (l)
-                                           (if (stringp l) l (string l)))
-                                         enum)
-                    :if-not-exists if-not-exists))))
+  Vendor kinds beyond :distinct/:structured/:enum/:base are allowed — emission is
+  open via EMIT-CREATE-TYPE-KIND. Exactly one shape among :AS / :ATTRIBUTES / :ENUM
+  / explicit :KIND."
+  (let* ((inferred (cond (as :distinct)
+                         (attributes :structured)
+                         (enum :enum)
+                         (kind kind)
+                         (t nil)))
+         (kind (or kind inferred)))
+    (unless kind
+      (%err "create-type requires :as, :attributes, :enum, or :kind"))
+    (when (and as attributes)
+      (%err "create-type: :as and :attributes are mutually exclusive"))
+    (make-instance 'create-type-statement
+                   :name name
+                   :kind kind
+                   :base-type as
+                   :attributes (when attributes (%normalize-type-attributes attributes))
+                   :enum-labels (when enum
+                                  (mapcar (lambda (l)
+                                            (if (stringp l) l (string l)))
+                                          enum))
+                   :base-options base-options
+                   :if-not-exists if-not-exists)))
 
 (defun drop-type (name &key if-exists cascade)
   (make-instance 'drop-type-statement
@@ -776,10 +802,7 @@ the driver when :value is absent. :type encodes that payload."
                  :if-not-exists if-not-exists))
 
 (defun alter-type (name &rest actions)
-  (dolist (a actions)
-    (unless (typep a '(or add-attribute-clause drop-attribute-clause
-                          rename-attribute-clause add-enum-value-clause))
-      (%err "alter-type: unexpected action ~s" a)))
+  "ALTER TYPE. ACTIONS are open clause nodes; emit via EMIT-ALTER-TYPE-ACTION."
   (make-instance 'alter-type-statement :name name :actions actions))
 
 (defun create-domain (name &key as default check not-null if-not-exists)

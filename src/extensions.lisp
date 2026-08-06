@@ -243,3 +243,57 @@ BIND T (bindparam): encode → placeholder + param vector."
              (make-instance 'nary-op
                             :op op-key
                             :operands (mapcar #'ensure-expr args))))))))
+
+;;; ---------------------------------------------------------------------------
+;;; Dialect AST extensions — open constructors for non-standard nodes
+;;;
+;;; Dialects define CLOS subclasses of SQL-EXTENSION / SQL-CLAUSE / SQL-STATEMENT
+;;; and specialize EMIT-SQL / EMIT-ALTER-TABLE-ACTION / EMIT-CREATE-TYPE-KIND /
+;;; EMIT-CREATE-TABLE-EXTRA / EMIT-EXTENSION.
+;;;
+;;; Optionally register a keyword → constructor for discovery / sexpr sugar:
+;;;   (register-sql-extension :pg-inherits #'make-pg-inherits :kind :create-table-extra)
+;;; ---------------------------------------------------------------------------
+
+(defclass sql-extension-def ()
+  ((name :initarg :name :reader sql-extension-name)
+   (constructor :initarg :constructor :reader sql-extension-constructor)
+   (kind :initarg :kind :reader sql-extension-kind :initform :node
+         :documentation ":node | :alter-table-action | :alter-type-action | :create-table-extra | :statement")
+   (documentation :initarg :documentation :reader sql-extension-documentation
+                  :initform nil)))
+
+(defvar *sql-extension-registry* (make-hash-table :test #'eq)
+  "Keyword → sql-extension-def for dialect-registered AST constructors.")
+
+(defun register-sql-extension (name constructor &key (kind :node) documentation)
+  "Register NAME (keyword) → CONSTRUCTOR for a dialect AST extension.
+CONSTRUCTOR is a function of &rest args returning an sql-node.
+KIND documents where the node is typically plugged in."
+  (check-type name keyword)
+  (check-type constructor (or symbol function))
+  (let ((def (make-instance 'sql-extension-def
+                            :name name
+                            :constructor (if (symbolp constructor)
+                                             (symbol-function constructor)
+                                             constructor)
+                            :kind kind
+                            :documentation documentation)))
+    (setf (gethash name *sql-extension-registry*) def)
+    def))
+
+(defun find-sql-extension (name)
+  (gethash name *sql-extension-registry*))
+
+(defun make-sql-extension (name &rest args)
+  "Invoke a registered extension constructor, or error if unknown."
+  (let ((def (or (find-sql-extension name)
+                 (%err "no sql-extension registered for ~s" name))))
+    (apply (sql-extension-constructor def) args)))
+
+(defun list-sql-extensions (&optional kind)
+  "List registered extension names, optionally filtered by KIND."
+  (loop for name being the hash-keys of *sql-extension-registry*
+        using (hash-value def)
+        when (or (null kind) (eq (sql-extension-kind def) kind))
+          collect name))

@@ -33,6 +33,33 @@ Same protocol/backend split as `sql-protocol` / `sql-backend-*`.
 
 Default compile dialect is **ANSI** (`?`, `CHARACTER VARYING`, `GENERATED … AS IDENTITY`). Load a dialect backend project to register `:sqlite3` / `:postgres` for `dialect-for-connection`.
 
+## Dialect AST extension points
+
+Vendor dialects add non-standard AST **without** editing core `typecase`s:
+
+| Hook | Use |
+|------|-----|
+| subclass `sql-extension` / `sql-clause` / `sql-statement` | define nodes in the dialect package |
+| `emit-sql` on `(dialect-class node-class)` | top-level statement / expr emit |
+| `emit-alter-table-action` | open `ALTER TABLE` actions |
+| `emit-alter-type-action` | open `ALTER TYPE` actions |
+| `emit-create-type-kind` | open `CREATE TYPE` kinds (`eql :enum`, `eql :base`, …) |
+| `emit-create-table-extra` | trailing `CREATE TABLE` bits (`INHERITS`, …) |
+| `emit-extension` | family fallback for a dialect |
+| `register-sql-extension` | optional keyword → constructor registry |
+
+```lisp
+(defclass pg-inherits (sql-extension)
+  ((parent :initarg :parent :reader pg-inherits-parent)))
+
+(defmethod emit-create-table-extra ((d postgres-dialect) (x pg-inherits) stream ctx)
+  …)
+
+(create-table :child (column :id :type :integer) (make-instance 'pg-inherits :parent :parent))
+(alter-table :t my-vendor-action)   ; emit-alter-table-action
+(create-type :t :kind :base :base-options '(:input … :output …))  ; emit-create-type-kind
+```
+
 ## Extension registry (types, operators, functions)
 
 Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
@@ -81,11 +108,13 @@ Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core
 
 `register-sql-type` remains the Lisp↔value adapter (encode/decode); CREATE TYPE is schema DDL. SQLite rejects type/domain DDL (`sql-dialect-unsupported`).
 
-Still missing vs Foundation (later): `CREATE CAST` / `DROP CAST`, typed tables (`CREATE TABLE … OF`), base-type UDTs with INPUT/OUTPUT.
+Typed tables: `(create-table :people :of :person-t)`. Vendor trailing clauses go in `create-table-extras` / open `sql-node` args.
+
+Still missing vs Foundation (later): `CREATE CAST` / `DROP CAST` emit, `ALTER DOMAIN`, `ALTER COLUMN … SET DATA TYPE`, GRANT/REVOKE, triggers/functions (AST stubs may exist; constructors/emit incomplete).
 
 ## Core surface (wave-1)
 
-`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL (incl. type/domain) · `sql-fragment` · `make-sql-table` / `create-table-from`.
+`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL (incl. type/domain + typed tables) · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
 
 SxQL is **not** the public API.
 
@@ -96,6 +125,7 @@ First-party Rove suites (not vendored NIST/sqltest/slt):
 - `tests/ansi-compliance.lisp` — ANSI emit coverage
 - `tests/sql-query-test.lisp` — Core DSL smoke
 - `tests/extension-registry-test.lisp` — type/op registry
+- `tests/dialect-extension-test.lisp` — open AST hooks (`sql-extension`, emit generics)
 - `tests/procedure-test.lisp` — ANSI SQL/PSM procedural
 
 Dialect backend tests live in `sql-query-sqlite3` / `sql-query-postgres`.

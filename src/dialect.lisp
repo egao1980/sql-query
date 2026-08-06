@@ -102,7 +102,29 @@ TYPE/OP/FUNC registries hold extension adapters (register-sql-type/op/func)."))
   (vector-push-extend value (emit-context-params ctx)))
 
 (defgeneric emit-sql (dialect node stream ctx)
-  (:documentation "Write SQL for NODE to STREAM; accumulate params in CTX."))
+  (:documentation "Write SQL for NODE to STREAM; accumulate params in CTX.
+
+Open for dialect packages: specialize on (dialect-class node-class).
+Unknown core nodes fall through to EMIT-EXTENSION."))
+
+(defgeneric emit-extension (dialect node stream ctx)
+  (:documentation
+   "Fallback emit for nodes without a more specific EMIT-SQL method.
+    Dialect packages may specialize this for whole families of sql-extension nodes.")
+  (:method ((dialect sql-dialect) node stream ctx)
+    (declare (ignore stream ctx))
+    (error 'sql-dialect-unsupported
+           :feature (class-name (class-of node))
+           :dialect dialect
+           :message (format nil "no emit-sql method for ~s on ~s"
+                            (class-name (class-of node))
+                            (class-name (class-of dialect))))))
+
+(defmethod emit-sql (dialect (node sql-node) stream ctx)
+  "Least-specific fallback (do not specialize DIALECT here — avoids CLOS
+ambiguity with methods that only specialize the node). Dialects add
+more-specific EMIT-SQL methods or specialize EMIT-EXTENSION."
+  (emit-extension dialect node stream ctx))
 
 (defmethod emit-sql (dialect (node sql-fragment) stream ctx)
   (let* ((template (sql-fragment-template node))
@@ -737,20 +759,32 @@ when :value is omitted — it is not inlined into SQL."
        (write-string " ON UPDATE " stream)
        (emit-referential-action (foreign-key-on-update c) stream)))))
 
+(defgeneric emit-create-table-extra (dialect extra stream ctx)
+  (:documentation "Emit a CREATE TABLE extension node after the column list.")
+  (:method ((dialect sql-dialect) extra stream ctx)
+    (emit-sql dialect extra stream ctx)))
+
 (defmethod emit-sql (dialect (stmt create-table-statement) stream ctx)
   (write-string "CREATE TABLE " stream)
   (when (create-table-if-not-exists stmt)
     (write-string "IF NOT EXISTS " stream))
   (emit-ident dialect (create-table-table stmt) stream)
-  (write-string " (" stream)
+  (when (create-table-of-type stmt)
+    (write-string " OF " stream)
+    (emit-ident dialect (create-table-of-type stmt) stream))
   (let ((parts (append (create-table-columns stmt)
                        (create-table-constraints stmt))))
-    (loop for (p . rest) on parts
-          do (if (typep p 'column-def)
-                 (emit-column-def dialect p stream ctx)
-                 (emit-table-constraint dialect p stream ctx))
-             (when rest (write-string ", " stream))))
-  (write-char #\) stream))
+    (when (or parts (null (create-table-of-type stmt)))
+      (write-string " (" stream)
+      (loop for (p . rest) on parts
+            do (if (typep p 'column-def)
+                   (emit-column-def dialect p stream ctx)
+                   (emit-table-constraint dialect p stream ctx))
+               (when rest (write-string ", " stream)))
+      (write-char #\) stream)))
+  (dolist (extra (create-table-extras stmt))
+    (write-char #\Space stream)
+    (emit-create-table-extra dialect extra stream ctx)))
 
 (defmethod emit-sql (dialect (stmt drop-table-statement) stream ctx)
   (declare (ignore ctx))
@@ -759,33 +793,46 @@ when :value is omitted — it is not inlined into SQL."
     (write-string "IF EXISTS " stream))
   (emit-ident dialect (drop-table-table stmt) stream))
 
+(defgeneric emit-alter-table-action (dialect action stream ctx)
+  (:documentation
+   "Emit one ALTER TABLE action. Open — dialects add methods for vendor clauses.")
+  (:method ((dialect sql-dialect) (action add-column-clause) stream ctx)
+    (write-string "ADD COLUMN " stream)
+    (emit-column-def dialect (add-column-column action) stream ctx))
+  (:method ((dialect sql-dialect) (action drop-column-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "DROP COLUMN " stream)
+    (emit-ident dialect (drop-column-name action) stream))
+  (:method ((dialect sql-dialect) (action add-constraint-clause) stream ctx)
+    (write-string "ADD " stream)
+    (emit-table-constraint dialect (add-constraint-constraint action) stream ctx))
+  (:method ((dialect sql-dialect) (action drop-constraint-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "DROP CONSTRAINT " stream)
+    (emit-ident dialect (drop-constraint-name action) stream))
+  (:method ((dialect sql-dialect) (action rename-column-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "RENAME COLUMN " stream)
+    (emit-ident dialect (rename-column-old action) stream)
+    (write-string " TO " stream)
+    (emit-ident dialect (rename-column-new action) stream))
+  (:method ((dialect sql-dialect) (action rename-table-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "RENAME TO " stream)
+    (emit-ident dialect (rename-table-new action) stream))
+  (:method ((dialect sql-dialect) action stream ctx)
+    (declare (ignore stream ctx))
+    (error 'sql-dialect-unsupported
+           :feature (class-name (class-of action))
+           :dialect dialect
+           :message (format nil "unsupported ALTER TABLE action ~s" action))))
+
 (defmethod emit-sql (dialect (stmt alter-table-statement) stream ctx)
   (loop for (action . rest) on (alter-table-actions stmt)
         do (write-string "ALTER TABLE " stream)
            (emit-ident dialect (alter-table-table stmt) stream)
            (write-char #\Space stream)
-           (typecase action
-             (add-column-clause
-              (write-string "ADD COLUMN " stream)
-              (emit-column-def dialect (add-column-column action) stream ctx))
-             (drop-column-clause
-              (write-string "DROP COLUMN " stream)
-              (emit-ident dialect (drop-column-name action) stream))
-             (add-constraint-clause
-              (write-string "ADD " stream)
-              (emit-table-constraint dialect (add-constraint-constraint action) stream ctx))
-             (drop-constraint-clause
-              (write-string "DROP CONSTRAINT " stream)
-              (emit-ident dialect (drop-constraint-name action) stream))
-             (rename-column-clause
-              (write-string "RENAME COLUMN " stream)
-              (emit-ident dialect (rename-column-old action) stream)
-              (write-string " TO " stream)
-              (emit-ident dialect (rename-column-new action) stream))
-             (rename-table-clause
-              (write-string "RENAME TO " stream)
-              (emit-ident dialect (rename-table-new action) stream))
-             (t (%err "unsupported alter-table action ~s" action)))
+           (emit-alter-table-action dialect action stream ctx)
            (when rest (write-string "; " stream))))
 
 (defmethod emit-sql (dialect (stmt values-selectable) stream ctx)
@@ -938,32 +985,46 @@ when :value is omitted — it is not inlined into SQL."
 ;;; CREATE / DROP / ALTER TYPE + DOMAIN
 ;;; ---------------------------------------------------------------------------
 
+(defgeneric emit-create-type-kind (dialect kind stmt stream ctx)
+  (:documentation
+   "Emit CREATE TYPE for KIND. Open — dialects specialize (eql :enum), (eql :base), …")
+  (:method ((dialect sql-dialect) (kind (eql :distinct)) stmt stream ctx)
+    (declare (ignore ctx))
+    (write-string "CREATE TYPE " stream)
+    (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
+    (emit-ident dialect (create-type-name stmt) stream)
+    (write-string " AS " stream)
+    (write-string (dialect-type-sql dialect (create-type-base-type stmt)) stream))
+  (:method ((dialect sql-dialect) (kind (eql :structured)) stmt stream ctx)
+    (declare (ignore ctx))
+    (write-string "CREATE TYPE " stream)
+    (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
+    (emit-ident dialect (create-type-name stmt) stream)
+    (write-string " AS (" stream)
+    (loop for (attr . rest) on (create-type-attributes stmt)
+          do (emit-ident dialect (type-attribute-name attr) stream)
+             (write-char #\Space stream)
+             (write-string (dialect-type-sql dialect (type-attribute-type attr)) stream)
+             (when rest (write-string ", " stream)))
+    (write-char #\) stream))
+  (:method ((dialect sql-dialect) (kind (eql :enum)) stmt stream ctx)
+    (declare (ignore stmt stream ctx))
+    (error 'sql-dialect-unsupported
+           :feature :create-type-enum
+           :dialect dialect
+           :message "CREATE TYPE … AS ENUM is not ANSI SQL — use sql-query-postgres"))
+  (:method ((dialect sql-dialect) kind stmt stream ctx)
+    (declare (ignore stmt stream ctx))
+    (error 'sql-dialect-unsupported
+           :feature kind
+           :dialect dialect
+           :message (format nil "CREATE TYPE kind ~s unsupported on ~s"
+                            kind (class-name (class-of dialect))))))
+
 (defgeneric emit-create-type (dialect stmt stream ctx)
-  (:documentation "Emit CREATE TYPE. Default handles ANSI distinct/structured; ENUM is vendor.")
+  (:documentation "Emit CREATE TYPE — default dispatches on CREATE-TYPE-KIND.")
   (:method ((dialect sql-dialect) stmt stream ctx)
-    (ecase (create-type-kind stmt)
-      (:distinct
-       (write-string "CREATE TYPE " stream)
-       (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
-       (emit-ident dialect (create-type-name stmt) stream)
-       (write-string " AS " stream)
-       (write-string (dialect-type-sql dialect (create-type-base-type stmt)) stream))
-      (:structured
-       (write-string "CREATE TYPE " stream)
-       (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
-       (emit-ident dialect (create-type-name stmt) stream)
-       (write-string " AS (" stream)
-       (loop for (attr . rest) on (create-type-attributes stmt)
-             do (emit-ident dialect (type-attribute-name attr) stream)
-                (write-char #\Space stream)
-                (write-string (dialect-type-sql dialect (type-attribute-type attr)) stream)
-                (when rest (write-string ", " stream)))
-       (write-char #\) stream))
-      (:enum
-       (error 'sql-dialect-unsupported
-              :feature :create-type-enum
-              :dialect dialect
-              :message "CREATE TYPE … AS ENUM is not ANSI SQL — use sql-query-postgres")))))
+    (emit-create-type-kind dialect (create-type-kind stmt) stmt stream ctx)))
 
 (defmethod emit-sql (dialect (stmt create-type-statement) stream ctx)
   (emit-create-type dialect stmt stream ctx))

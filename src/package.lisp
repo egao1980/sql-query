@@ -12,6 +12,9 @@
    ;; AST base
    #:sql-node
    #:sql-statement
+   #:sql-clause
+   #:sql-expr
+   #:sql-extension
    #:sql-fragment
    #:make-sql-fragment
 
@@ -98,6 +101,8 @@
    #:type-attribute-name #:type-attribute-type
    #:create-type-name #:create-type-kind #:create-type-base-type
    #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
+   #:create-type-base-options
+   #:create-table-of-type #:create-table-extras
    #:drop-type-name #:alter-type-name #:alter-type-actions
    #:create-domain-name #:create-domain-base-type
    #:drop-domain-name
@@ -142,8 +147,14 @@
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list
+   ;; open dialect extension emit hooks
+   #:emit-extension
+   #:emit-alter-table-action
+   #:emit-create-table-extra
+   #:emit-create-type #:emit-create-type-kind
+   #:emit-alter-type-action
 
-   ;; extension registries (types / ops / funcs)
+   ;; extension registries (types / ops / funcs / AST)
    #:sql-type-def #:sql-op-def #:sql-func-def
    #:register-sql-type #:register-sql-op #:register-sql-func
    #:find-sql-type #:find-sql-op #:find-sql-func
@@ -152,6 +163,11 @@
    #:emit-typed-value #:registered-type-sql
    #:*sql-op-catalog* #:*sql-func-catalog*
    #:sql-func-sql-name #:sql-func-emit-fn
+   #:sql-extension-def #:sql-extension-name #:sql-extension-constructor
+   #:sql-extension-kind #:sql-extension-documentation
+   #:*sql-extension-registry*
+   #:register-sql-extension #:find-sql-extension
+   #:make-sql-extension #:list-sql-extensions
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique
@@ -164,8 +180,6 @@
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
    #:for-update-of #:for-update-nowait #:for-update-skip-locked
-
-   #:emit-create-type #:emit-alter-type-action
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 
