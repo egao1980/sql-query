@@ -66,25 +66,3 @@
                        (params (in :by :integer))
                        (body (sql-fragment "UPDATE counters SET n = n + ?" 1))))))
     (%assert-contains sql "UPDATE counters" "BEGIN" "END")))
-
-(deftest layer2-postgres-plpgsql
-  (let* ((d (sql-query-postgres:make-postgres-dialect))
-         (stmt (create-procedure :bump
-                  (params (in :by :integer) (inout :n :integer))
-                  (body
-                   (let ((tmp :integer 0))
-                     (if (:= :n 0)
-                         (setf :n :by)
-                         (setf :n (:+ :n :by)))
-                     (loop :while (:< :tmp 3)
-                           :do (setf :tmp (:+ :tmp 1)))
-                     (when (:> :n 1000) (return))))))
-         (sql (nth-value 0 (compile-sql stmt :dialect d))))
-    (%assert-contains sql
-                      "LANGUAGE plpgsql" "AS $$" "DECLARE" ":="
-                      "IF " "THEN" "ELSE" "END IF"
-                      "WHILE " "LOOP " "END LOOP" "EXIT"
-                      "INTEGER := 0")
-    (%assert-absent sql "END WHILE" "LEAVE")
-    (ng (search "$1" sql) "no bind placeholders ($$ is plpgsql quoting)")
-    (ok (null (nth-value 1 (compile-sql stmt :dialect d))))))

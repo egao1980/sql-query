@@ -58,21 +58,6 @@ jobs:
           ros install "sbcl-bin/$SBCL_VERSION"
           ros use "sbcl-bin/$SBCL_VERSION"
 
-      - name: Install SQLite (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-          elif command -v brew >/dev/null 2>&1; then
-            brew list sqlite >/dev/null 2>&1 || brew install sqlite
-          fi
-
-      - name: Install SQLite (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: choco install sqlite -y --no-progress
-
       - name: Pull cl-repository-client (OCI)
         shell: bash
         run: |
@@ -102,6 +87,4 @@ jobs:
         shell: bash
         run: |
           export CL_SOURCE_REGISTRY="$(pwd)//:$(pwd)/${CL_REPOSITORY_CLIENT_DIR}//:"
-          # sql-protocol is on GHCR; this checkout provides sql-query
-          export CL_SOURCE_REGISTRY="$(pwd)//:$(pwd)/${CL_REPOSITORY_CLIENT_DIR}//:${CL_SOURCE_REGISTRY:-}"
           ros -l scripts/ci-test.lisp -q

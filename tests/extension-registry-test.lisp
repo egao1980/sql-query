@@ -88,16 +88,6 @@
   (ok (signals (ensure-expr '(:definitely-not-an-op :a 1))
                'sql-query-error)))
 
-(deftest postgres-seeded-jsonb-and-ops
-  (let ((d (sql-query-postgres:make-postgres-dialect)))
-    (ok (string= "JSONB" (dialect-type-sql d :jsonb)))
-    (ok (string= "JSON" (dialect-type-sql d :json)))
-    (ok (string= "INTEGER[]" (dialect-type-sql d '(:array :integer))))
-    (multiple-value-bind (sql params)
-        (compile-sql
-         (select (columns (ensure-expr '(:->> :payload "name")))
-                 (from :events)
-                 (where (ensure-expr `(:@> :payload ,(typed "{\"ok\":true}" :jsonb)))))
-         :dialect d)
-      (%assert-contains sql "->>" "@>" "CAST(" "AS JSONB" "'name'" "'{\"ok\":true}'")
-      (ok (null params)))))
+(deftest ansi-dialect-registry
+  (ok (typep (gethash :ansi sql-query:*sql-dialect-registry*)
+             'sql-query:ansi-dialect)))

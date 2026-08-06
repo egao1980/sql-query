@@ -1,6 +1,6 @@
 (defsystem "sql-query"
   :version "0.1.0"
-  :description "Composable CLOS SQL DSL for cl-stack — full ANSI SQL builtin; vendor dialects are backend systems"
+  :description "Composable CLOS SQL DSL for cl-stack — ANSI SQL builtin; vendor dialects are separate projects"
   :author "egao1980"
   :license "MIT"
   :depends-on ("uiop" "sql-protocol")
@@ -20,21 +20,15 @@
   :in-order-to ((test-op (test-op "sql-query/tests"))))
 
 (defsystem "sql-query/tests"
-  :depends-on ("sql-query"
-               "sql-query-sqlite3"
-               "sql-query-postgres"
-               "sql-backend-sqlite3"
-               "rove")
+  :depends-on ("sql-query" "rove")
   :pathname "tests"
   :serial t
   :components ((:file "package")
                (:file "helpers")
                (:file "sql-query-test")
                (:file "ansi-compliance")
-               (:file "dialect-backend-test")
                (:file "extension-registry-test")
-               (:file "procedure-test")
-               (:file "vendor-extensions-test"))
+               (:file "procedure-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
                (error "tests failed for ~A" (component-name c)))))

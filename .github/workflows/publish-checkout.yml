@@ -13,10 +13,6 @@ env:
 
 jobs:
   publish:
-    strategy:
-      fail-fast: false
-      matrix:
-        system: [sql-query, sql-query-sqlite3, sql-query-postgres]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,10 +49,10 @@ jobs:
             tar -xzf "$f" -C ~/.local/share/cl-systems/
           done
 
-      - name: Publish ${{ matrix.system }}
+      - name: Publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
-          PKG_SYSTEM: ${{ matrix.system }}
+          PKG_SYSTEM: sql-query
           PKG_VERSION: ${{ inputs.version }}
         run: sbcl --noinform --non-interactive --load scripts/publish-checkout.lisp
