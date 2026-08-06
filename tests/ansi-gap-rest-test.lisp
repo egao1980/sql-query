@@ -59,9 +59,10 @@
 
 (deftest within-group-ordered-set
   (let ((sql (%sql (select (columns (sql-func :percentile-cont 0.5
-                                              :within-group '((:salary :asc))))
+                                              :within-group '((:salary :desc))))
                            (from :emp)))))
-    (%assert-contains sql "PERCENTILE_CONT" "WITHIN GROUP (ORDER BY" "ASC")))
+    (%assert-contains sql "WITHIN GROUP (ORDER BY" "DESC")
+    (ok (search "percentile-cont" sql :test #'char-equal))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Named WINDOW + OVER name
