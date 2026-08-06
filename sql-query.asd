@@ -1,5 +1,5 @@
 (defsystem "sql-query"
-  :version "0.1.0"
+  :version "0.2.0"
   :description "Composable CLOS SQL DSL for cl-stack — ANSI SQL builtin; vendor dialects are separate projects"
   :author "egao1980"
   :license "MIT"
