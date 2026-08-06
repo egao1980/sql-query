@@ -154,24 +154,30 @@ Order: :to-expr → else typed-value node (emit uses :emit-value / encode+CAST).
   "Tag VALUE with SQL TYPE. Emit uses the dialect's type adapter at compile time."
   (make-instance 'typed-value :value value :sql-type type))
 
-(defun emit-typed-value (dialect type-spec value stream ctx)
-  "Emit VALUE for TYPE-SPEC: :emit-value, else :to-expr, else CAST(? AS type) + encode."
+(defun emit-typed-value (dialect type-spec value stream ctx &key bind)
+  "Emit VALUE for TYPE-SPEC via type mapping.
+BIND NIL (default, literals): encode → SQL literal text, usually CAST(lit AS type).
+BIND T (bindparam): encode → placeholder + param vector."
   (let* ((key (%type-key type-spec))
-         (def (and key (find-sql-type dialect key))))
+         (def (and key (find-sql-type dialect key)))
+         (wire (if def (encode-sql-value dialect type-spec value) value)))
     (cond
       ((null def)
-       ;; Unregistered: bind raw (same as lit).
-       (emit-placeholder dialect stream ctx)
-       (push-param ctx value))
+       (if bind
+           (progn (emit-placeholder dialect stream ctx)
+                  (push-param ctx value))
+           (emit-sql-literal dialect value stream)))
       ((sql-type-emit-value-fn def)
        (funcall (sql-type-emit-value-fn def) dialect value stream ctx))
       ((sql-type-to-expr-fn def)
        (emit-sql dialect (funcall (sql-type-to-expr-fn def) dialect value) stream ctx))
       (t
-       ;; Default write: CAST(? AS <type>) with optional encode.
        (write-string "CAST(" stream)
-       (emit-placeholder dialect stream ctx)
-       (push-param ctx (encode-sql-value dialect type-spec value))
+       (if bind
+           (progn
+             (emit-placeholder dialect stream ctx)
+             (push-param ctx wire))
+           (emit-sql-literal dialect wire stream))
        (write-string " AS " stream)
        (write-string (%render-type-sql dialect def type-spec) stream)
        (write-char #\) stream)))))

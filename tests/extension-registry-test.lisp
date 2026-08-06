@@ -15,8 +15,8 @@
       :decode (lambda (v) (string-trim "<>" v)))
     (multiple-value-bind (sql params)
         (compile-sql (select (columns (typed "x" :tag)) (from :t)) :dialect d)
-      (%assert-contains sql "CAST(" "AS CHARACTER VARYING")
-      (ok (equal '("<x>") params)))
+      (%assert-contains sql "CAST(" "AS CHARACTER VARYING" "'<x>'")
+      (ok (null params) "typed literals inline after encode"))
     (ok (string= "x" (sql-type-read d :tag "<x>")))
     (ok (string= "<hi>" (encode-sql-value d :tag "hi")))))
 
@@ -28,8 +28,7 @@
                  (declare (ignore dialect))
                  (sql-func "POINT" (first value) (second value))))
     (let ((sql (%sql (select (columns (typed '(1 2) :point)) (from :t)) d)))
-      (%assert-contains sql "POINT(")
-      (ok (%has sql "POINT")))))
+      (%assert-contains sql "POINT(" "POINT(1, 2)"))))
 
 (deftest type-emit-value-override
   (let ((d (make-ansi-dialect)))
@@ -47,12 +46,14 @@
     (register-sql-type :jsonish d
       :sql "JSON"
       :encode (lambda (v) (format nil "~a" v)))
-    (ok (equal '("{\"a\":1}")
-               (%params (select (columns (lit "{\"a\":1}" :jsonish)) (from :t)) d)))
+    (let ((lit-sql (%sql (select (columns (lit "{\"a\":1}" :jsonish)) (from :t)) d)))
+      (%assert-contains lit-sql "CAST(" "'{\"a\":1}'" "AS JSON")
+      (ok (null (%params (select (columns (lit "{\"a\":1}" :jsonish)) (from :t)) d))))
     (ok (equal '("{\"a\":1}")
                (%params (select (columns (bindparam :j "{\"a\":1}" :type :jsonish))
                                 (from :t))
-                        d)))))
+                        d))
+        "bindparam is the explicit placeholder path")))
 
 (deftest sql-type-write-helper
   (let ((d (make-ansi-dialect)))
@@ -67,7 +68,7 @@
     (let* ((stmt (select (columns :id) (from :docs)
                          (where (ensure-expr '(:@@ :body "lisp")))))
            (sql (%sql stmt d)))
-      (%assert-contains sql "@@")
+      (%assert-contains sql "@@" "'lisp'")
       (ok (%has sql "\"body\"")))))
 
 (deftest register-op-custom-emit
@@ -80,7 +81,8 @@
               (emit-sql dialect (binary-op-right node) stream ctx)))
     (let ((sql (%sql (select (columns (ensure-expr '(:->>> :j "k"))) (from :t)) d)))
       (ok (%has sql "->>>"))
-      (ok (%has sql "\"j\"")))))
+      (ok (%has sql "\"j\""))
+      (%assert-contains sql "'k'"))))
 
 (deftest unknown-op-still-errors
   (ok (signals (ensure-expr '(:definitely-not-an-op :a 1))
@@ -97,5 +99,5 @@
                  (from :events)
                  (where (ensure-expr `(:@> :payload ,(typed "{\"ok\":true}" :jsonb)))))
          :dialect d)
-      (%assert-contains sql "->>" "@>" "CAST(" "AS JSONB")
-      (ok (equal '("name" "{\"ok\":true}") params)))))
+      (%assert-contains sql "->>" "@>" "CAST(" "AS JSONB" "'name'" "'{\"ok\":true}'")
+      (ok (null params)))))

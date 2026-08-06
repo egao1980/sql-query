@@ -12,7 +12,8 @@
     (ok (search "ORDER BY" (%sql stmt)))
     (ok (search "FETCH FIRST" (%sql stmt)) "ANSI uses FETCH FIRST not LIMIT")
     (ng (search "LIMIT" (%sql stmt)))
-    (ok (equal '(1 10) (%params stmt)))))
+    (%assert-contains (%sql stmt) "= 1" "FETCH FIRST 10")
+    (ok (null (%params stmt)) "bare literals are inlined — use bindparam for ?")))
 
 (deftest select-core-shapes
   (let* ((stmt (select (distinct)
@@ -31,7 +32,8 @@
     (ok (search "CASE" sql))
     (ok (search "BETWEEN" sql))
     (ok (search "EXISTS" sql))
-    (ok (search "FOR UPDATE" sql))))
+    (ok (search "FOR UPDATE" sql))
+    (%assert-contains sql "'yes'" "'no'" "BETWEEN 18 AND 65")))
 
 (deftest cte-union-subquery
   (let* ((inner (select (columns :id) (from :t) (where (:= :a 1))))
@@ -54,7 +56,8 @@
     (ok (search "LEFT JOIN" (%sql stmt)))
     (ok (search "GROUP BY" (%sql stmt)))
     (ok (search "HAVING" (%sql stmt)))
-    (ok (equal '(1) (%params stmt)))))
+    (%assert-contains (%sql stmt) "> 1")
+    (ok (null (%params stmt)))))
 
 (deftest insert-update-delete
   (let ((ins (insert-into :users
@@ -65,11 +68,12 @@
                (where (:= :id 1))))
         (del (delete-from :users (where (:= :id 1)))))
     (ok (search "INSERT INTO" (%sql ins)))
-    (ok (equal '("ada" "ada@example.com") (%params ins)))
+    (%assert-contains (%sql ins) "'ada'" "'ada@example.com'")
+    (ok (null (%params ins)))
     (ok (search "UPDATE" (%sql upd)))
-    (ok (equal '("grace" 1) (%params upd)))
+    (%assert-contains (%sql upd) "'grace'" "= 1")
     (ok (search "DELETE FROM" (%sql del)))
-    (ok (equal '(1) (%params del)))))
+    (%assert-contains (%sql del) "= 1")))
 
 (deftest ddl-ansi
   (let* ((d (make-ansi-dialect))
@@ -102,13 +106,13 @@
                       (from :t))))
     (ok (search "CAST(" (%sql stmt)))
     (ok (search "+" (%sql stmt)))
-    (ok (equal '(3) (%params stmt)))))
+    (ok (equal '(3) (%params stmt)) "only bindparam contributes params")))
 
 (deftest sql-fragment-nesting
   (let ((stmt (select (columns (sql-fragment "count(*) AS c"))
                       (from :users)
                       (where (sql-and
-                              (:= :tenant-id 7)
+                              (:= :tenant-id (bindparam :tid 7))
                               (sql-fragment "created_at > ?" "2020-01-01"))))))
     (ok (search "count(*) AS c" (%sql stmt)))
     (ok (equal '(7 "2020-01-01") (%params stmt)))))
@@ -118,16 +122,17 @@
                       (from :t)
                       (where (parse-expr `(:and (:= :a 1) (:= :b 2)))))))
     (ok (search "AND" (%sql stmt)))
-    (ok (equal '(1 2) (%params stmt)))))
+    (%assert-contains (%sql stmt) "= 1" "= 2")
+    (ok (null (%params stmt)))))
 
 (deftest compose-and-where
   (let* ((base (select (columns :id) (from :t) (where (:= :a 1))))
          (more (and-where base (:= :b 2)))
          (merged (merge-query base (limit 5))))
-    (ok (equal '(1 2) (%params more)))
+    (ok (null (%params more)))
     (ok (search "FETCH FIRST" (%sql merged)))
-    (ok (equal '(1 5) (%params merged)))
-    (ok (equal '(1) (%params base)))))
+    (%assert-contains (%sql merged) "FETCH FIRST 5")
+    (ok (null (%params base)))))
 
 (deftest procedure-ansi-sql-psm
   (let* ((d (make-ansi-dialect))
@@ -138,4 +143,4 @@
     (ok (search "CREATE PROCEDURE" sql))
     (ok (search "BEGIN" sql))
     (ok (search "END" sql))
-    (ok (search "CALL" (%sql (sql-call :bump 1) d)))))
+    (ok (equal '(1) (%params stmt d)) "fragment ? still binds")))

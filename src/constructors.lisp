@@ -19,7 +19,8 @@
     (t (make-instance 'column-ref :name name :table table))))
 
 (defun lit (value &optional type)
-  "Literal VALUE. Optional TYPE (registered sql type) uses the type adapter on emit."
+  "SQL literal VALUE (always inlined). Optional TYPE runs encode + typed literal emit.
+Use BINDPARAM when you need a placeholder."
   (make-instance 'literal :value value :sql-type type))
 
 (defun sql-raw (text)

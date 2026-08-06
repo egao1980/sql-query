@@ -20,12 +20,19 @@
 
 (deftest postgres-params-dollar
   (let* ((d (sql-query-postgres:make-postgres-dialect))
-         (stmt (select (columns :id) (from :t) (where (:= :id 42))))
+         (stmt (select (columns :id) (from :t)
+                       (where (:= :id (bindparam :id 42)))))
          (sql (nth-value 0 (compile-sql stmt :dialect d)))
          (params (nth-value 1 (compile-sql stmt :dialect d))))
     (ok (search "$1" sql))
     (ng (search "?" sql))
-    (ok (equal '(42) params))))
+    (ok (equal '(42) params)))
+  (let* ((d (sql-query-postgres:make-postgres-dialect))
+         (sql (nth-value 0 (compile-sql
+                            (select (columns :id) (from :t) (where (:= :id 42)))
+                            :dialect d))))
+    (ok (search "= 42" sql) "bare literal inlined")
+    (ng (search "$" sql))))
 
 (deftest procedure-sqlite-unsupported
   (let ((stmt (create-procedure :bump

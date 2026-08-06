@@ -128,19 +128,40 @@ TYPE-REGISTRY / OP-REGISTRY hold extension adapters (see register-sql-type / reg
     (write-char #\. stream))
   (emit-ident dialect (column-ref-name node) stream))
 
+(defun emit-sql-literal (dialect value stream)
+  "Write VALUE as SQL literal text according to its Lisp type (never a placeholder).
+NIL → NULL, T → TRUE, :FALSE → FALSE, numbers/strings/chars as SQL literals."
+  (cond
+    ((null value) (write-string "NULL" stream))
+    ((eq value t) (write-string (dialect-boolean dialect t) stream))
+    ((eq value :false) (write-string (dialect-boolean dialect nil) stream))
+    ((integerp value) (format stream "~d" value))
+    ((floatp value)
+     (write-string (string-trim "( )" (format nil "~f" value)) stream))
+    ((stringp value)
+     (write-char #\' stream)
+     (loop for c across value
+           do (when (char= c #\') (write-char #\' stream))
+              (write-char c stream))
+     (write-char #\' stream))
+    ((characterp value)
+     (emit-sql-literal dialect (string value) stream))
+    ((and (vectorp value) (not (stringp value)))
+     (%err "cannot emit vector ~s as SQL literal — register a type or use bindparam" value))
+    (t (%err "cannot emit ~s (~a) as SQL literal — use bindparam or a typed literal"
+             value (type-of value)))))
+
 (defmethod emit-sql (dialect (node literal) stream ctx)
+  "Literals are always inlined. Placeholders come only from BINDPARAM / sql-fragment."
   (let ((v (literal-value node))
         (ty (literal-sql-type node)))
-    (cond
-      ((null v) (write-string "NULL" stream))
-      (ty (emit-typed-value dialect ty v stream ctx))
-      (t
-       (emit-placeholder (emit-context-dialect ctx) stream ctx)
-       (push-param ctx v)))))
+    (if ty
+        (emit-typed-value dialect ty v stream ctx :bind nil)
+        (emit-sql-literal dialect v stream))))
 
 (defmethod emit-sql (dialect (node typed-value) stream ctx)
   (emit-typed-value dialect (typed-value-sql-type node) (typed-value-value node)
-                    stream ctx))
+                    stream ctx :bind nil))
 
 (defun %emit-op (dialect op stream)
   (let ((def (find-sql-op dialect op)))
@@ -198,15 +219,16 @@ TYPE-REGISTRY / OP-REGISTRY hold extension adapters (see register-sql-type / reg
   (emit-ident dialect (labeled-name node) stream))
 
 (defmethod emit-sql (dialect (node bind-param) stream ctx)
+  "Explicit placeholder. Optional :type encodes and may wrap CAST(? AS …)."
   (let ((ty (bind-param-sql-type node))
         (raw (if (bind-param-has-value node)
                  (bind-param-value node)
                  (bind-param-name node))))
-    (if (and ty (bind-param-has-value node))
-        (emit-typed-value dialect ty raw stream ctx)
+    (if ty
+        (emit-typed-value dialect ty raw stream ctx :bind t)
         (progn
           (emit-placeholder dialect stream ctx)
-          (push-param ctx (if ty (encode-sql-value dialect ty raw) raw))))))
+          (push-param ctx raw)))))
 
 (defun emit-from-item (dialect item stream ctx &optional alias)
   (cond

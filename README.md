@@ -45,7 +45,8 @@ Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
   :to-expr (lambda (d v) …)        ; Lisp → sql-node (preferred write)
   :emit-value (lambda (d v s ctx) …)) ; or full emit control
 
-(typed value :money)               ; or (lit value :money) / (bindparam :x v :type :money)
+(typed value :money)               ; or (lit value :money) — inlined via type encode
+(bindparam :x v :type :money)      ; explicit placeholder (+ encode)
 (sql-type-write dialect :money v)  ; → sql-expr
 (sql-type-read dialect :money db)  ; → Lisp
 
@@ -53,7 +54,7 @@ Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
 (ensure-expr '(:->> :payload "name"))
 ```
 
-Default write without `:to-expr` / `:emit-value` is `CAST(? AS <sql>)` plus `:encode`. JSON/BSON stay out of core — `sql-query-postgres` seeds `:json` / `:jsonb` / `:array` and ops (`->`, `->>`, `@>`, …) with overridable encode/decode.
+**Literals vs params:** `lit` / bare values always emit SQL literal text (typed → encode then literal/`CAST`). Placeholders (`?` / `$n`) only from `bindparam` or `sql-fragment` `?` slots.
 
 ## Procedural SQL (two layers)
 

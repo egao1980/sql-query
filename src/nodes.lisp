@@ -30,7 +30,7 @@
 (defclass literal (sql-expr)
   ((value :initarg :value :reader literal-value)
    (sql-type :initarg :sql-type :reader literal-sql-type :initform nil
-             :documentation "Optional registered type keyword/spec for encode/emit.")))
+             :documentation "Optional registered type — encode + emit as SQL literal text.")))
 
 (defclass typed-value (sql-expr)
   ((value :initarg :value :reader typed-value-value)

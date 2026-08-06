@@ -31,10 +31,10 @@
          (off-only (%sql (select (columns :id) (from :t) (offset 2)))))
     (%assert-contains both "OFFSET" "ROWS" "FETCH FIRST" "ROWS ONLY")
     (%assert-absent both "LIMIT")
-    ;; ANSI emit: OFFSET then FETCH → params in that order
-    (ok (equal '(5 10) (%params both-stmt)))
-    (%assert-contains fetch-only "FETCH FIRST")
-    (%assert-contains off-only "OFFSET" "ROWS")
+    (%assert-contains both "OFFSET 5 ROWS" "FETCH FIRST 10")
+    (ok (null (%params both-stmt)))
+    (%assert-contains fetch-only "FETCH FIRST 3")
+    (%assert-contains off-only "OFFSET 2 ROWS")
     (%assert-absent off-only "FETCH")))
 
 (deftest ansi-order-group-having
@@ -125,7 +125,8 @@
                                (sql-or (sql-not (:= :g 7)) (:= :h 8))))))
          (sql (%sql stmt)))
     (%assert-contains sql "AND" "OR" "NOT" "=" "<>" "<" ">" "<=" ">=")
-    (ok (equal '(1 2 3 4 5 6 7 8) (%params stmt)))))
+    (%assert-contains sql "= 1" "<> 2" "< 3" "> 4" "<= 5" ">= 6" "= 7" "= 8")
+    (ok (null (%params stmt)))))
 
 (deftest ansi-null-and-distinct-predicates
   (let ((sql (%sql (select (columns :id)
@@ -148,8 +149,9 @@
                                (sql-like :name "a%")
                                (similar-to :code "[A-Z]+")))))
          (sql (%sql stmt)))
-    (%assert-contains sql "BETWEEN" "NOT BETWEEN" "IN (" "LIKE" "SIMILAR TO")
-    (ok (equal '(1 10 1 10 1 2 3 "a%" "[A-Z]+") (%params stmt)))))
+    (%assert-contains sql "BETWEEN" "NOT BETWEEN" "IN (" "LIKE" "SIMILAR TO"
+                      "BETWEEN 1 AND 10" "IN (1, 2, 3)" "LIKE 'a%'" "SIMILAR TO '[A-Z]+'")
+    (ok (null (%params stmt)))))
 
 (deftest ansi-quantified-comparisons
   (let* ((sub (select (columns :id) (from :u)))
@@ -205,14 +207,15 @@
                     "GROUPING SETS"))
 
 (deftest ansi-bindparam-and-fragment-order
-  "Corner: fragment ? slots interleave with typed binds in order."
+  "Corner: fragment ? slots interleave with explicit binds; bare lit inlined."
   (let ((stmt (select (columns :id)
                       (from :t)
                       (where (sql-and
                               (:= :a (bindparam :x 1))
                               (sql-fragment "(b > ? AND c < ?)" 2 3)
                               (:= :d 4))))))
-    (ok (equal '(1 2 3 4) (%params stmt)))))
+    (ok (equal '(1 2 3) (%params stmt)))
+    (%assert-contains (%sql stmt) "= 4")))
 
 ;;; ---------------------------------------------------------------------------
 ;;; DML
@@ -377,6 +380,6 @@
                        (from :user-data "u")
                        (where (:= :u.id 1))))
          (sql (%sql stmt)))
-    (%assert-contains sql "\"user-data\"" ".")
+    (%assert-contains sql "\"user-data\"" "." "= 1")
     (ok (search "\"u\"" sql))
-    (ok (equal '(1) (%params stmt)))))
+    (ok (null (%params stmt)))))

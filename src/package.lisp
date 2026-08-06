@@ -109,6 +109,7 @@
    #:dialect-type-sql #:dialect-autoincrement-pk #:dialect-autoincrement-suffix
    #:emit-sql #:emit-column-def #:emit-create-procedure #:emit-call
    #:emit-ident #:ident-string #:emit-placeholder #:push-param
+   #:emit-sql-literal
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list

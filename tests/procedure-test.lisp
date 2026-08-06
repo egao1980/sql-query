@@ -33,8 +33,11 @@
          (sql (%sql stmt)))
     (%assert-contains sql
                       "CREATE PROCEDURE" "BEGIN" "DECLARE" "INTEGER"
-                      "DEFAULT" "IF " "THEN" "ELSE" "END IF" "SET "
-                      "END")))
+                      "DEFAULT 0" "IF " "THEN" "ELSE" "END IF" "SET "
+                      "END")
+    ;; Procedure bodies inline constants — no bind placeholders.
+    (ng (find #\? sql :test #'char=))
+    (ok (null (%params stmt)))))
 
 (deftest layer2-lispy-cond-while-loop-return
   (let* ((stmt (create-procedure :walk
@@ -53,7 +56,10 @@
     (%assert-contains sql
                       "IF " "ELSEIF " "ELSE " "END IF"
                       "WHILE " "END WHILE"
-                      "LOOP " "END LOOP" "LEAVE")))
+                      "LOOP " "END LOOP" "LEAVE"
+                      "= 0" "= 1" "< 10" "> 100")
+    (ng (find #\? sql :test #'char=))
+    (ok (null (%params stmt)))))
 
 (deftest layer2-still-accepts-fragments
   (let ((sql (%sql (create-procedure :bump
@@ -77,5 +83,8 @@
     (%assert-contains sql
                       "LANGUAGE plpgsql" "AS $$" "DECLARE" ":="
                       "IF " "THEN" "ELSE" "END IF"
-                      "WHILE " "LOOP " "END LOOP" "EXIT")
-    (%assert-absent sql "END WHILE" "LEAVE")))
+                      "WHILE " "LOOP " "END LOOP" "EXIT"
+                      "INTEGER := 0")
+    (%assert-absent sql "END WHILE" "LEAVE")
+    (ng (search "$1" sql) "no bind placeholders ($$ is plpgsql quoting)")
+    (ok (null (nth-value 1 (compile-sql stmt :dialect d))))))
