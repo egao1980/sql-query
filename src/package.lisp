@@ -95,7 +95,7 @@
    #:on #:using
    #:group-by #:having #:order-by
    #:limit #:offset
-   #:distinct #:for-update
+   #:distinct #:for-update #:for-share
    #:cte #:with-cte
    #:sql-values #:default-values #:values-row
    #:sql-set #:returning
@@ -182,6 +182,7 @@
    #:emit-sql-literal
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
+   #:emit-insert-prefix #:emit-insert-extras #:emit-trigger-execute
    #:emit-join #:emit-column-list
    ;; open dialect extension emit hooks
    #:emit-extension
@@ -216,7 +217,13 @@
    #:binary-op #:binary-op-left #:binary-op-right #:binary-op-op
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
-   #:for-update-of #:for-update-nowait #:for-update-skip-locked
+   #:for-update-of #:for-update-nowait #:for-update-skip-locked #:for-update-strength
+   #:statement-clauses #:insert-table
+   #:create-trigger-name #:create-trigger-timing #:create-trigger-events
+   #:create-trigger-table #:create-trigger-for-each #:create-trigger-condition
+   #:create-trigger-function #:create-trigger-function-args #:create-trigger-body
+   #:drop-trigger-name #:drop-trigger-table #:drop-trigger-if-exists #:drop-trigger-cascade
+   #:create-trigger-statement #:drop-trigger-statement
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 

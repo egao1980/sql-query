@@ -85,6 +85,12 @@ Vendor extensions live in sql-query-* backend systems."))
            :feature :for-update-wait
            :dialect dialect
            :message "NOWAIT/SKIP LOCKED are not ANSI SQL"))
+  (when (and (for-update-strength clause)
+             (not (eq (for-update-strength clause) :update)))
+    (error 'sql-dialect-unsupported
+           :feature :for-update-strength
+           :dialect dialect
+           :message "FOR SHARE / NO KEY UPDATE / KEY SHARE are not ANSI SQL"))
   (write-string " FOR UPDATE" stream)
   (when (for-update-of clause)
     (write-string " OF " stream)

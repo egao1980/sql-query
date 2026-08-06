@@ -572,9 +572,17 @@ when :value is omitted — it is not inlined into SQL."
       (write-string " OFFSET " stream)
       (emit-sql dialect (lit (offset-count off)) stream ctx))))
 
+(defun %for-update-strength-sql (strength)
+  (ecase strength
+    (:update " FOR UPDATE")
+    (:no-key-update " FOR NO KEY UPDATE")
+    (:share " FOR SHARE")
+    (:key-share " FOR KEY SHARE")))
+
 (defgeneric emit-for-update (dialect clause stream ctx)
   (:method (dialect clause stream ctx)
-    (write-string " FOR UPDATE" stream)
+    (write-string (%for-update-strength-sql (or (for-update-strength clause) :update))
+                  stream)
     (when (for-update-of clause)
       (write-string " OF " stream)
       (emit-column-list dialect (for-update-of clause) stream ctx))
@@ -640,8 +648,24 @@ when :value is omitted — it is not inlined into SQL."
                (write-string op-sql stream)
                (write-char #\Space stream)))))
 
+(defgeneric emit-insert-prefix (dialect stmt stream ctx)
+  (:documentation
+   "Write INSERT [OR …] INTO / REPLACE INTO before the table name.
+    Dialects specialize for INSERT OR REPLACE / REPLACE INTO.")
+  (:method (dialect stmt stream ctx)
+    (declare (ignore stmt ctx))
+    (write-string "INSERT INTO " stream)))
+
+(defgeneric emit-insert-extras (dialect stmt stream ctx)
+  (:documentation
+   "Emit vendor clauses between VALUES/SELECT and RETURNING (e.g. ON CONFLICT).
+    Default: no-op. Dialects look up extension clauses on STMT.")
+  (:method (dialect stmt stream ctx)
+    (declare (ignore dialect stmt stream ctx))
+    nil))
+
 (defmethod emit-sql (dialect (stmt insert-statement) stream ctx)
-  (write-string "INSERT INTO " stream)
+  (emit-insert-prefix dialect stmt stream ctx)
   (emit-ident dialect (insert-table stmt) stream)
   (let ((cols (%clause stmt 'columns-clause)))
     (when cols
@@ -666,6 +690,7 @@ when :value is omitted — it is not inlined into SQL."
        (write-char #\Space stream)
        (emit-sql dialect (select-source-select src) stream ctx))
       (t (%err "insert-into requires sql-values, default-values, or select"))))
+  (emit-insert-extras dialect stmt stream ctx)
   (let ((ret (%clause stmt 'returning-clause)))
     (when ret
       (emit-returning dialect (returning-items ret) stream ctx))))
@@ -1363,59 +1388,60 @@ when :value is omitted — it is not inlined into SQL."
   (emit-ident dialect (drop-function-name stmt) stream)
   (when (drop-function-cascade stmt) (write-string " CASCADE" stream)))
 
-(defun %emit-trigger-timing (timing stream)
-  (write-string (ecase timing
-                  (:before "BEFORE ")
-                  (:after "AFTER ")
-                  (:instead-of "INSTEAD OF "))
-                stream))
+(defun %trigger-timing-sql (timing)
+  (ecase timing
+    (:before "BEFORE")
+    (:after "AFTER")
+    (:instead-of "INSTEAD OF")))
 
-(defun %emit-trigger-events (events stream)
-  (loop for (e . rest) on events
-        do (write-string (ecase e
-                           (:insert "INSERT")
-                           (:update "UPDATE")
-                           (:delete "DELETE"))
-                         stream)
-           (when rest (write-string " OR " stream))))
+(defun %trigger-event-sql (event)
+  (ecase event
+    (:insert "INSERT")
+    (:update "UPDATE")
+    (:delete "DELETE")))
+
+(defgeneric emit-trigger-execute (dialect stmt stream ctx)
+  (:documentation
+   "Emit EXECUTE FUNCTION/PROCEDURE … or ANSI-style triggered SQL body.
+    Dialects specialize (Postgres: EXECUTE FUNCTION / PROCEDURE).")
+  (:method (dialect stmt stream ctx)
+    (cond
+      ((create-trigger-function stmt)
+       (write-string "EXECUTE PROCEDURE " stream)
+       (emit-ident dialect (create-trigger-function stmt) stream)
+       (write-char #\( stream)
+       (loop for (a . rest) on (create-trigger-function-args stmt)
+             do (emit-sql dialect (ensure-expr a) stream ctx)
+                (when rest (write-string ", " stream)))
+       (write-char #\) stream))
+      ((create-trigger-body stmt)
+       (loop for (form . rest) on (create-trigger-body stmt)
+             do (emit-sql dialect form stream ctx)
+                (when rest (write-string "; " stream))))
+      (t (%err "create-trigger requires :function or :body")))))
 
 (defmethod emit-sql (dialect (stmt create-trigger-statement) stream ctx)
   (write-string "CREATE TRIGGER " stream)
   (emit-ident dialect (create-trigger-name stmt) stream)
   (write-char #\Space stream)
-  (%emit-trigger-timing (create-trigger-timing stmt) stream)
-  (%emit-trigger-events (create-trigger-events stmt) stream)
+  (write-string (%trigger-timing-sql (create-trigger-timing stmt)) stream)
+  (write-char #\Space stream)
+  (loop for (ev . rest) on (create-trigger-events stmt)
+        do (write-string (%trigger-event-sql ev) stream)
+           (when rest (write-string " OR " stream)))
   (write-string " ON " stream)
   (emit-ident dialect (create-trigger-table stmt) stream)
-  (when (create-trigger-for-each stmt)
-    (write-string " FOR EACH " stream)
-    (write-string (ecase (create-trigger-for-each stmt)
-                    (:row "ROW")
-                    (:statement "STATEMENT"))
-                  stream))
+  (write-string " FOR EACH " stream)
+  (write-string (ecase (or (create-trigger-for-each stmt) :statement)
+                  (:row "ROW")
+                  (:statement "STATEMENT"))
+                stream)
   (when (create-trigger-condition stmt)
     (write-string " WHEN (" stream)
     (emit-sql dialect (create-trigger-condition stmt) stream ctx)
     (write-char #\) stream))
-  (cond
-    ((create-trigger-function stmt)
-     (write-string " EXECUTE PROCEDURE " stream)
-     (emit-ident dialect (create-trigger-function stmt) stream)
-     (write-char #\( stream)
-     (loop for (a . rest) on (create-trigger-function-args stmt)
-           do (emit-sql dialect (ensure-expr a) stream ctx)
-              (when rest (write-string ", " stream)))
-     (write-char #\) stream))
-    ((create-trigger-body stmt)
-     (write-string " BEGIN " stream)
-     (loop for (form . rest) on (create-trigger-body stmt)
-           do (emit-sql dialect form stream ctx)
-              (write-char #\; stream)
-              (when rest (write-char #\Space stream)))
-     (write-string " END" stream))
-    (t
-     (error 'sql-query-error
-            :message "create-trigger requires :body or :function"))))
+  (write-char #\Space stream)
+  (emit-trigger-execute dialect stmt stream ctx))
 
 (defmethod emit-sql (dialect (stmt drop-trigger-statement) stream ctx)
   (declare (ignore ctx))
@@ -1426,6 +1452,7 @@ when :value is omitted — it is not inlined into SQL."
     (write-string " ON " stream)
     (emit-ident dialect (drop-trigger-table stmt) stream))
   (when (drop-trigger-cascade stmt) (write-string " CASCADE" stream)))
+
 
 (defmethod emit-sql (dialect (stmt grant-statement) stream ctx)
   (declare (ignore ctx))

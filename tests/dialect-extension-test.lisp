@@ -83,3 +83,17 @@
 (deftest emit-extension-fallback
   (ok (signals (compile-sql (make-toy-inherits :p) :dialect (make-ansi-dialect))
                'sql-dialect-unsupported)))
+
+(deftest for-share-ansi-rejected
+  (ok (signals (compile-sql (select (columns :id) (from :t) (for-share))
+                            :dialect (make-ansi-dialect))
+               'sql-dialect-unsupported)))
+
+(deftest create-trigger-ansi-emit
+  (let ((sql (%sql (create-trigger :trg
+                     :timing :before
+                     :events '(:update)
+                     :table :t
+                     :for-each :row
+                     :body (list (sql-fragment "UPDATE t SET n = n + 1"))))))
+    (%assert-contains sql "CREATE TRIGGER" "BEFORE UPDATE" "FOR EACH ROW" "UPDATE")))

@@ -245,7 +245,10 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
   ((on :initarg :on :reader distinct-on :initform nil))) ; nil = DISTINCT; list = DISTINCT ON (…)
 
 (defclass for-update-clause (sql-clause)
-  ((of :initarg :of :reader for-update-of :initform nil)
+  ((strength :initarg :strength :reader for-update-strength :initform :update
+             :documentation
+             ":update | :no-key-update | :share | :key-share (Postgres lock strengths).")
+   (of :initarg :of :reader for-update-of :initform nil)
    (nowait :initarg :nowait :reader for-update-nowait :initform nil)
    (skip-locked :initarg :skip-locked :reader for-update-skip-locked :initform nil)))
 

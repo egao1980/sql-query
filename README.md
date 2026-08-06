@@ -45,6 +45,9 @@ Vendor dialects add non-standard AST **without** editing core `typecase`s:
 | `emit-alter-type-action` | open `ALTER TYPE` actions |
 | `emit-create-type-kind` | open `CREATE TYPE` kinds (`eql :enum`, `eql :base`, …) |
 | `emit-create-table-extra` | trailing `CREATE TABLE` bits (`INHERITS`, …) |
+| `emit-insert-prefix` / `emit-insert-extras` | `INSERT OR …` / `ON CONFLICT` hooks |
+| `emit-trigger-execute` | `EXECUTE FUNCTION` / `PROCEDURE` / body |
+| `for-share` / `for-update :strength` | row lock strengths |
 | `emit-extension` | family fallback for a dialect |
 | `register-sql-extension` | optional keyword → constructor registry |
 

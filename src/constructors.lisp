@@ -305,11 +305,17 @@ the driver when :value is absent. :type encodes that payload."
 (defun distinct (&rest on-exprs)
   (make-instance 'distinct-clause :on (mapcar #'ensure-expr on-exprs)))
 
-(defun for-update (&key of nowait skip-locked)
+(defun for-update (&key of nowait skip-locked (strength :update))
+  "Row lock clause. STRENGTH is :update (default), :share, :key-share, or :no-key-update."
   (make-instance 'for-update-clause
+                 :strength strength
                  :of (when of (mapcar #'ensure-expr (if (listp of) of (list of))))
                  :nowait nowait
                  :skip-locked skip-locked))
+
+(defun for-share (&key of nowait skip-locked)
+  "FOR SHARE — shorthand for (for-update :strength :share …)."
+  (for-update :of of :nowait nowait :skip-locked skip-locked :strength :share))
 
 (defun cte (name query &key recursive)
   (as-cte query name :recursive recursive))
