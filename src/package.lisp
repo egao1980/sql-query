@@ -61,7 +61,17 @@
    #:column #:add-column #:drop-column
    #:primary-key #:unique-key #:check #:foreign-key
    #:add-constraint #:drop-constraint #:rename-column #:rename-to
-   #:procedure-params #:procedure-param #:params #:in #:out #:body
+   #:procedure-params #:procedure-param #:params #:in #:out #:inout
+   ;; procedural SQL — layer 1 (SQL-shaped) + layer 2 (lispy BODY)
+   #:make-body #:body #:body*
+   #:proc-progn #:proc-let #:proc-if #:proc-cond #:proc-setf
+   #:proc-while #:proc-until #:proc-loop #:proc-loop-labeled #:proc-return
+   #:proc-node
+   #:proc-progn-forms #:proc-let-bindings #:proc-let-forms #:proc-let-sequential
+   #:proc-if-test #:proc-if-then #:proc-if-else
+   #:proc-cond-clauses #:proc-setf-place #:proc-setf-value
+   #:proc-while-test #:proc-while-forms #:proc-while-until
+   #:proc-loop-forms #:proc-loop-label #:proc-return-label
    #:create-view #:drop-view
    #:create-schema #:drop-schema
    #:create-sequence #:drop-sequence
@@ -119,6 +129,7 @@
    #:procedure-param-name #:procedure-param-type #:procedure-param-mode
    #:call-name #:call-args
    #:binary-op #:binary-op-left #:binary-op-right #:binary-op-op
+   #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
    #:for-update-of #:for-update-nowait #:for-update-skip-locked
 

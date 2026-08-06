@@ -55,6 +55,26 @@ Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
 
 Default write without `:to-expr` / `:emit-value` is `CAST(? AS <sql>)` plus `:encode`. JSON/BSON stay out of core — `sql-query-postgres` seeds `:json` / `:jsonb` / `:array` and ops (`->`, `->>`, `@>`, …) with overridable encode/decode.
 
+## Procedural SQL (two layers)
+
+**Layer 1** — SQL-shaped nodes (`proc-if`, `proc-setf`, `proc-while`, `proc-loop`, `proc-let`, …) map 1–2–1 onto SQL/PSM / plpgsql text via `emit-sql`.
+
+**Layer 2** — lispy `body` macro expands CL-shaped forms into layer 1:
+
+```lisp
+(create-procedure :bump
+  (params (in :by :integer) (inout :n :integer))
+  (body
+   (let ((tmp :integer 0))
+     (if (:= :n 0)
+         (setf :n :by)
+         (setf :n (:+ :n :by)))
+     (loop :while (:< :tmp 3) :do (setf :tmp (:+ :tmp 1)))
+     (when (:> :n 1000) (return)))))
+```
+
+Use `make-body` + `proc-*` when building ASTs programmatically. Sqlite: unsupported.
+
 ## Core surface (wave-1)
 
 `select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL · `sql-fragment` · `make-sql-table` / `create-table-from`.

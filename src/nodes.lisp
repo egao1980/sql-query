@@ -184,6 +184,46 @@
 (defclass body-clause (sql-clause)
   ((forms :initarg :forms :reader body-forms)))
 
+;;; Procedural (SQL/PSM / plpgsql) — lispy control flow inside BODY
+
+(defclass proc-node (sql-node) ()
+  (:documentation "Procedural statement (IF/LET/SETF/LOOP/…) inside CREATE PROCEDURE."))
+
+(defclass proc-progn (proc-node)
+  ((forms :initarg :forms :reader proc-progn-forms :initform nil)))
+
+(defclass proc-let (proc-node)
+  ((bindings :initarg :bindings :reader proc-let-bindings)
+   ;; each binding: (name type &optional default-expr)
+   (forms :initarg :forms :reader proc-let-forms :initform nil)
+   (sequential :initarg :sequential :reader proc-let-sequential :initform nil)))
+
+(defclass proc-if (proc-node)
+  ((test :initarg :test :reader proc-if-test)
+   (then :initarg :then :reader proc-if-then)
+   (else :initarg :else :reader proc-if-else :initform nil)))
+
+(defclass proc-cond (proc-node)
+  ((clauses :initarg :clauses :reader proc-cond-clauses)))
+  ;; each clause: (test . forms) ; test = T for otherwise
+
+(defclass proc-setf (proc-node)
+  ((place :initarg :place :reader proc-setf-place)
+   (value :initarg :value :reader proc-setf-value)))
+
+(defclass proc-while (proc-node)
+  ((test :initarg :test :reader proc-while-test)
+   (forms :initarg :forms :reader proc-while-forms :initform nil)
+   (until :initarg :until :reader proc-while-until :initform nil)))
+
+(defclass proc-loop (proc-node)
+  ((forms :initarg :forms :reader proc-loop-forms :initform nil)
+   (label :initarg :label :reader proc-loop-label :initform nil)))
+
+(defclass proc-return (proc-node)
+  ((label :initarg :label :reader proc-return-label :initform nil))
+  (:documentation "LEAVE (SQL/PSM) / EXIT (plpgsql); optional block/loop label."))
+
 (defclass distinct-clause (sql-clause)
   ((on :initarg :on :reader distinct-on :initform nil))) ; nil = DISTINCT; list = DISTINCT ON (…)
 

@@ -370,6 +370,9 @@
 (defun out (name type)
   (procedure-param name type :mode :out))
 
+(defun inout (name type)
+  (procedure-param name type :mode :inout))
+
 (defun procedure-params (&rest params)
   (make-instance 'procedure-params-clause
                  :params (mapcar (lambda (p)
@@ -381,14 +384,7 @@
 (defun params (&rest params)
   (apply #'procedure-params params))
 
-(defun body (&rest forms)
-  (make-instance 'body-clause
-                 :forms (mapcar (lambda (f)
-                                  (cond
-                                    ((typep f 'sql-node) f)
-                                    ((stringp f) (sql-raw f))
-                                    (t (ensure-expr f))))
-                                forms)))
+;;; BODY is defined in procedure.lisp (lispy IF/LET/SETF/LOOP expander).
 
 ;;; ---------------------------------------------------------------------------
 ;;; Statement constructors
