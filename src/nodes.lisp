@@ -10,6 +10,14 @@
 (defclass sql-statement (sql-node) ()
   (:documentation "Top-level SQL statement node."))
 
+(defclass sql-extension (sql-node) ()
+  (:documentation
+   "Mixin for vendor / non-standard AST nodes defined outside sql-query core.
+
+Dialect packages subclass this (or any sql-node) and specialize EMIT-SQL /
+EMIT-ALTER-TABLE-ACTION / EMIT-CREATE-TYPE-KIND / EMIT-EXTENSION.
+Core never typecases on extension classes — dispatch is open via CLOS."))
+
 (defclass sql-fragment (sql-node)
   ((template :initarg :template :reader sql-fragment-template)
    (args :initarg :args :reader sql-fragment-args :initform nil))
@@ -83,7 +91,11 @@
 
 (defclass function-call (sql-expr)
   ((name :initarg :name :reader function-call-name)
-   (args :initarg :args :reader function-call-args :initform nil)))
+   (args :initarg :args :reader function-call-args :initform nil)
+   (filter :initarg :filter :reader function-call-filter :initform nil
+           :documentation "Optional FILTER (WHERE …) predicate for aggregates.")
+   (within-group :initarg :within-group :reader function-call-within-group :initform nil
+                 :documentation "Optional WITHIN GROUP (ORDER BY …) items for ordered-set aggs.")))
 
 (defclass array-literal (sql-expr)
   ((items :initarg :items :reader array-literal-items :initform nil))
@@ -126,7 +138,9 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 
 (defclass from-clause (sql-clause)
   ((table :initarg :table :reader from-table)
-   (alias :initarg :alias :reader from-alias :initform nil)))
+   (alias :initarg :alias :reader from-alias :initform nil)
+   (tablesample :initarg :tablesample :reader from-tablesample :initform nil
+                :documentation "Optional tablesample-spec on this FROM item.")))
 
 (defclass where-clause (sql-clause)
   ((expr :initarg :expr :reader where-expr)))
@@ -137,7 +151,8 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (alias :initarg :alias :reader join-alias :initform nil)
    (on :initarg :on :reader join-on :initform nil)
    (using :initarg :using :reader join-using :initform nil)
-   (natural :initarg :natural :reader join-natural :initform nil)))
+   (natural :initarg :natural :reader join-natural :initform nil)
+   (tablesample :initarg :tablesample :reader join-tablesample :initform nil)))
 
 (defclass on-clause (sql-clause)
   ((expr :initarg :expr :reader on-expr)))
@@ -173,7 +188,13 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (autoincrement :initarg :autoincrement :reader column-def-autoincrement :initform nil)
    (not-null :initarg :not-null :reader column-def-not-null :initform nil)
    (unique :initarg :unique :reader column-def-unique :initform nil)
-   (default :initarg :default :reader column-def-default :initform nil)))
+   (default :initarg :default :reader column-def-default :initform nil)
+   (generated :initarg :generated :reader column-def-generated :initform nil
+              :documentation ":always | :by-default — GENERATED … AS (expr).")
+   (generated-as :initarg :generated-as :reader column-def-generated-as :initform nil
+                 :documentation "Generation expression (sql-expr or raw).")
+   (stored :initarg :stored :reader column-def-stored :initform nil
+           :documentation "T → STORED; NIL → omit (virtual/default per dialect).")))
 
 (defclass add-column-clause (sql-clause)
   ((column :initarg :column :reader add-column-column)))
@@ -236,7 +257,10 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
   ((on :initarg :on :reader distinct-on :initform nil))) ; nil = DISTINCT; list = DISTINCT ON (…)
 
 (defclass for-update-clause (sql-clause)
-  ((of :initarg :of :reader for-update-of :initform nil)
+  ((strength :initarg :strength :reader for-update-strength :initform :update
+             :documentation
+             ":update | :no-key-update | :share | :key-share (PG lock strengths; ANSI = :update).")
+   (of :initarg :of :reader for-update-of :initform nil)
    (nowait :initarg :nowait :reader for-update-nowait :initform nil)
    (skip-locked :initarg :skip-locked :reader for-update-skip-locked :initform nil)))
 
@@ -346,7 +370,27 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 
 (defclass over-expr (sql-expr)
   ((expr :initarg :expr :reader over-expr-of)
-   (window :initarg :window :reader over-window)))
+   (window :initarg :window :reader over-window
+           :documentation "window-spec for inline OVER (…), or name (keyword/symbol/string) for OVER w.")))
+
+(defclass window-clause (sql-clause)
+  ((name :initarg :name :reader window-clause-name)
+   (spec :initarg :spec :reader window-clause-spec))
+  (:documentation "Named WINDOW w AS (… ) clause on SELECT."))
+
+(defclass tablesample-spec (sql-node)
+  ((method :initarg :method :reader tablesample-method
+           :documentation ":bernoulli | :system")
+   (percent :initarg :percent :reader tablesample-percent)
+   (repeatable :initarg :repeatable :reader tablesample-repeatable :initform nil))
+  (:documentation "TABLESAMPLE BERNOULLI|SYSTEM (n) [REPEATABLE (seed)]."))
+
+(defclass table-like-clause (sql-node)
+  ((source :initarg :source :reader table-like-source)
+   (including :initarg :including :reader table-like-including :initform nil
+              :documentation "List of :defaults|:constraints|:indexes|:storage|:comments|:all|:generated …")
+   (excluding :initarg :excluding :reader table-like-excluding :initform nil))
+  (:documentation "CREATE TABLE … (LIKE other_table [INCLUDING|EXCLUDING …])."))
 
 (defclass grouping-expr (sql-expr)
   ((kind :initarg :kind :reader grouping-kind) ; :rollup :cube :grouping-sets
@@ -387,6 +431,12 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
   ((table :initarg :table :reader create-table-table)
    (columns :initarg :columns :reader create-table-columns :initform nil)
    (constraints :initarg :constraints :reader create-table-constraints :initform nil)
+   (of-type :initarg :of-type :reader create-table-of-type :initform nil
+            :documentation "Typed table: CREATE TABLE … OF udt_name (SQL Foundation).")
+   (extras :initarg :extras :reader create-table-extras :initform nil
+           :documentation "Open list of sql-node extensions (WITH clauses, vendor options, …).")
+   (temporary :initarg :temporary :reader create-table-temporary :initform nil
+              :documentation "CREATE TEMPORARY TABLE (also used by CREATE TABLE LIKE).")
    (if-not-exists :initarg :if-not-exists :reader create-table-if-not-exists :initform nil)))
 
 (defclass add-constraint-clause (sql-clause)
@@ -459,3 +509,234 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 (defclass merge-insert-action (sql-node)
   ((columns :initarg :columns :reader merge-insert-columns :initform nil)
    (values :initarg :values :reader merge-insert-values)))
+
+;;; User-defined types / domains (SQL Foundation)
+
+(defclass type-attribute (sql-node)
+  ((name :initarg :name :reader type-attribute-name)
+   (type :initarg :type :reader type-attribute-type))
+  (:documentation "Attribute of a structured CREATE TYPE … AS (…)."))
+
+(defclass create-type-statement (sql-statement)
+  ((name :initarg :name :reader create-type-name)
+   (kind :initarg :kind :reader create-type-kind
+         :documentation ":distinct | :structured | :enum | :base")
+   (base-type :initarg :base-type :reader create-type-base-type :initform nil
+              :documentation "Source type for distinct UDTs.")
+   (attributes :initarg :attributes :reader create-type-attributes :initform nil
+               :documentation "List of type-attribute for structured types.")
+   (enum-labels :initarg :enum-labels :reader create-type-enum-labels :initform nil
+                :documentation "String labels for ENUM (postgres extension).")
+   (base-options :initarg :base-options :reader create-type-base-options :initform nil
+                 :documentation "Plist for postgres base-type CREATE TYPE (INPUT/OUTPUT/…).")
+   (if-not-exists :initarg :if-not-exists :reader create-type-if-not-exists
+                  :initform nil)))
+
+(defclass drop-type-statement (sql-statement)
+  ((name :initarg :name :reader drop-type-name)
+   (if-exists :initarg :if-exists :reader drop-type-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-type-cascade :initform nil)))
+
+(defclass alter-type-statement (sql-statement)
+  ((name :initarg :name :reader alter-type-name)
+   (actions :initarg :actions :reader alter-type-actions :initform nil)))
+
+(defclass add-attribute-clause (sql-clause)
+  ((attribute :initarg :attribute :reader add-attribute-attribute)))
+
+(defclass drop-attribute-clause (sql-clause)
+  ((name :initarg :name :reader drop-attribute-name)))
+
+(defclass rename-attribute-clause (sql-clause)
+  ((old :initarg :old :reader rename-attribute-old)
+   (new :initarg :new :reader rename-attribute-new)))
+
+(defclass add-enum-value-clause (sql-clause)
+  ((label :initarg :label :reader add-enum-value-label)
+   (before :initarg :before :reader add-enum-value-before :initform nil)
+   (after :initarg :after :reader add-enum-value-after :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader add-enum-value-if-not-exists
+                  :initform nil))
+  (:documentation "Postgres ALTER TYPE … ADD VALUE (not ANSI)."))
+
+(defclass create-domain-statement (sql-statement)
+  ((name :initarg :name :reader create-domain-name)
+   (base-type :initarg :base-type :reader create-domain-base-type)
+   (default :initarg :default :reader create-domain-default :initform nil)
+   (check :initarg :check :reader create-domain-check :initform nil
+          :documentation "sql-expr; ANSI domains often use VALUE in the predicate.")
+   (not-null :initarg :not-null :reader create-domain-not-null :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader create-domain-if-not-exists
+                  :initform nil)))
+
+(defclass drop-domain-statement (sql-statement)
+  ((name :initarg :name :reader drop-domain-name)
+   (if-exists :initarg :if-exists :reader drop-domain-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-domain-cascade :initform nil)))
+
+(defclass alter-domain-statement (sql-statement)
+  ((name :initarg :name :reader alter-domain-name)
+   (actions :initarg :actions :reader alter-domain-actions :initform nil)))
+
+(defclass set-default-clause (sql-clause)
+  ((value :initarg :value :reader set-default-value)
+   (column :initarg :column :reader set-default-column :initform nil
+           :documentation "When set, this is an ALTER COLUMN … SET DEFAULT action.")))
+
+(defclass drop-default-clause (sql-clause)
+  ((column :initarg :column :reader drop-default-column :initform nil)))
+
+(defclass set-not-null-clause (sql-clause)
+  ((column :initarg :column :reader set-not-null-column :initform nil)))
+
+(defclass drop-not-null-clause (sql-clause)
+  ((column :initarg :column :reader drop-not-null-column :initform nil)))
+
+(defclass set-data-type-clause (sql-clause)
+  ((column :initarg :column :reader set-data-type-column)
+   (type :initarg :type :reader set-data-type-type)
+   (using :initarg :using :reader set-data-type-using :initform nil
+          :documentation "Optional USING expr (postgres common; ANSI has limited support).")))
+
+(defclass create-cast-statement (sql-statement)
+  ((source :initarg :source :reader create-cast-source)
+   (target :initarg :target :reader create-cast-target)
+   (with-function :initarg :with-function :reader create-cast-with-function :initform nil)
+   (without-function :initarg :without-function :reader create-cast-without-function
+                     :initform nil)
+   (with-inout :initarg :with-inout :reader create-cast-with-inout :initform nil)
+   (as :initarg :as :reader create-cast-as :initform nil
+       :documentation ":assignment | :implicit | NIL (= explicit only)")))
+
+(defclass drop-cast-statement (sql-statement)
+  ((source :initarg :source :reader drop-cast-source)
+   (target :initarg :target :reader drop-cast-target)
+   (if-exists :initarg :if-exists :reader drop-cast-if-exists :initform nil)))
+
+(defclass create-function-statement (sql-statement)
+  ((name :initarg :name :reader create-function-name)
+   (params :initarg :params :reader create-function-params :initform nil)
+   (returns :initarg :returns :reader create-function-returns :initform nil)
+   (body :initarg :body :reader create-function-body :initform nil)
+   (language :initarg :language :reader create-function-language :initform :sql)
+   (or-replace :initarg :or-replace :reader create-function-or-replace :initform nil)
+   (deterministic :initarg :deterministic :reader create-function-deterministic
+                  :initform nil)))
+
+(defclass drop-function-statement (sql-statement)
+  ((name :initarg :name :reader drop-function-name)
+   (if-exists :initarg :if-exists :reader drop-function-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-function-cascade :initform nil)))
+
+(defclass create-trigger-statement (sql-statement)
+  ((name :initarg :name :reader create-trigger-name)
+   (timing :initarg :timing :reader create-trigger-timing
+           :documentation ":before | :after | :instead-of")
+   (events :initarg :events :reader create-trigger-events
+           :documentation "List of :insert/:update/:delete")
+   (table :initarg :table :reader create-trigger-table)
+   (for-each :initarg :for-each :reader create-trigger-for-each :initform :statement
+             :documentation ":row | :statement")
+   (condition :initarg :condition :reader create-trigger-condition :initform nil
+              :documentation "Optional WHEN (predicate).")
+   (function :initarg :function :reader create-trigger-function :initform nil
+             :documentation "EXECUTE PROCEDURE/FUNCTION name (postgres) or body.")
+   (function-args :initarg :function-args :reader create-trigger-function-args
+                  :initform nil)
+   (body :initarg :body :reader create-trigger-body :initform nil
+         :documentation "ANSI-style triggered SQL statements list.")))
+
+(defclass drop-trigger-statement (sql-statement)
+  ((name :initarg :name :reader drop-trigger-name)
+   (table :initarg :table :reader drop-trigger-table :initform nil)
+   (if-exists :initarg :if-exists :reader drop-trigger-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-trigger-cascade :initform nil)))
+
+(defclass grant-statement (sql-statement)
+  ((privileges :initarg :privileges :reader grant-privileges
+               :documentation "T (= ALL) or list of privilege keywords/strings.")
+   (on :initarg :on :reader grant-on)
+   (on-kind :initarg :on-kind :reader grant-on-kind :initform :table
+            :documentation ":table | :sequence | :schema | :type | :domain | :function | :all-tables-in-schema")
+   (to :initarg :to :reader grant-to)
+   (with-grant-option :initarg :with-grant-option :reader grant-with-grant-option
+                      :initform nil)))
+
+(defclass revoke-statement (sql-statement)
+  ((privileges :initarg :privileges :reader revoke-privileges)
+   (on :initarg :on :reader revoke-on)
+   (on-kind :initarg :on-kind :reader revoke-on-kind :initform :table)
+   (from :initarg :from :reader revoke-from)
+   (cascade :initarg :cascade :reader revoke-cascade :initform nil)
+   (grant-option-for :initarg :grant-option-for :reader revoke-grant-option-for
+                     :initform nil)))
+
+(defclass comment-on-statement (sql-statement)
+  ((kind :initarg :kind :reader comment-on-kind
+         :documentation ":table | :column | :type | :domain | :schema | :index | :sequence | :function | :trigger")
+   (name :initarg :name :reader comment-on-name
+         :documentation "Object name, or (table column) for :column.")
+   (comment :initarg :comment :reader comment-on-comment)))
+
+;;; ---- Remaining ANSI/Foundation gaps ----
+
+(defclass create-assertion-statement (sql-statement)
+  ((name :initarg :name :reader create-assertion-name)
+   (check :initarg :check :reader create-assertion-check)
+   (deferrable :initarg :deferrable :reader create-assertion-deferrable :initform nil)
+   (initially :initarg :initially :reader create-assertion-initially :initform nil
+              :documentation ":immediate | :deferred")))
+
+(defclass drop-assertion-statement (sql-statement)
+  ((name :initarg :name :reader drop-assertion-name)
+   (if-exists :initarg :if-exists :reader drop-assertion-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-assertion-cascade :initform nil)))
+
+(defclass lock-table-statement (sql-statement)
+  ((tables :initarg :tables :reader lock-table-tables)
+   (mode :initarg :mode :reader lock-table-mode :initform :share
+         :documentation ":share | :exclusive | :access-share | :row-share | :row-exclusive | :share-update-exclusive | :share-row-exclusive | :access-exclusive")
+   (nowait :initarg :nowait :reader lock-table-nowait :initform nil)
+   (wait :initarg :wait :reader lock-table-wait :initform nil
+         :documentation "Optional wait seconds (vendor); NIL = default."))
+  (:documentation "LOCK TABLE … IN … MODE."))
+
+(defclass set-transaction-statement (sql-statement)
+  ((isolation :initarg :isolation :reader set-transaction-isolation :initform nil
+              :documentation ":read-uncommitted | :read-committed | :repeatable-read | :serializable")
+   (access-mode :initarg :access-mode :reader set-transaction-access-mode :initform nil
+                :documentation ":read-only | :read-write")
+   (deferrable :initarg :deferrable :reader set-transaction-deferrable :initform nil
+               :documentation "T | NIL | :not — DEFERRABLE / NOT DEFERRABLE."))
+  (:documentation "SET TRANSACTION [isolation] [access mode] [DEFERRABLE]. Complements START TRANSACTION."))
+
+(defclass create-collation-statement (sql-statement)
+  ((name :initarg :name :reader create-collation-name)
+   (from :initarg :from :reader create-collation-from :initform nil
+         :documentation "Source collation name, or NIL when using :locale/:lc-collate.")
+   (locale :initarg :locale :reader create-collation-locale :initform nil)
+   (lc-collate :initarg :lc-collate :reader create-collation-lc-collate :initform nil)
+   (lc-ctype :initarg :lc-ctype :reader create-collation-lc-ctype :initform nil)
+   (provider :initarg :provider :reader create-collation-provider :initform nil)
+   (deterministic :initarg :deterministic :reader create-collation-deterministic :initform nil)
+   (pad-space :initarg :pad-space :reader create-collation-pad-space :initform nil
+              :documentation "T → PAD SPACE; :no → NO PAD.")
+   (if-not-exists :initarg :if-not-exists :reader create-collation-if-not-exists :initform nil)))
+
+(defclass drop-collation-statement (sql-statement)
+  ((name :initarg :name :reader drop-collation-name)
+   (if-exists :initarg :if-exists :reader drop-collation-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-collation-cascade :initform nil)))
+
+(defclass create-character-set-statement (sql-statement)
+  ((name :initarg :name :reader create-character-set-name)
+   (from :initarg :from :reader create-character-set-from :initform nil)
+   (collate :initarg :collate :reader create-character-set-collate :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader create-character-set-if-not-exists
+                  :initform nil))
+  (:documentation "CREATE CHARACTER SET stub — few engines support it; emit for completeness."))
+
+(defclass drop-character-set-statement (sql-statement)
+  ((name :initarg :name :reader drop-character-set-name)
+   (if-exists :initarg :if-exists :reader drop-character-set-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-character-set-cascade :initform nil)))

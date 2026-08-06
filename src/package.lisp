@@ -12,6 +12,9 @@
    ;; AST base
    #:sql-node
    #:sql-statement
+   #:sql-clause
+   #:sql-expr
+   #:sql-extension
    #:sql-fragment
    #:make-sql-fragment
 
@@ -28,6 +31,11 @@
    #:drop-index-statement
    #:create-procedure-statement
    #:call-statement
+   #:create-type-statement
+   #:drop-type-statement
+   #:alter-type-statement
+   #:create-domain-statement
+   #:drop-domain-statement
 
    ;; statement constructors (SQLAlchemy Core–shaped)
    #:select
@@ -38,23 +46,35 @@
    #:intersect #:intersect-all
    #:except #:except-all
    #:create-table
+   #:create-table-like #:table-like
    #:drop-table
    #:alter-table
    #:create-index
    #:drop-index
    #:create-procedure
    #:sql-call
+   #:create-type
+   #:drop-type
+   #:alter-type
+   #:create-domain
+   #:drop-domain
+   #:create-assertion #:drop-assertion
+   #:lock-table
+   #:set-transaction
+   #:create-collation #:drop-collation
+   #:create-character-set #:drop-character-set
 
    ;; clauses
    #:columns
    #:from
+   #:tablesample
    #:where
    #:join #:left-join #:inner-join #:right-join #:full-join #:cross-join
    #:natural-join #:natural-left-join #:natural-right-join #:natural-full-join
    #:on #:using
    #:group-by #:having #:order-by
    #:limit #:offset
-   #:distinct #:for-update
+   #:distinct #:for-update #:for-share #:for-no-key-update #:for-key-share
    #:cte #:with-cte
    #:sql-values #:default-values #:values-row
    #:sql-set #:returning
@@ -77,6 +97,22 @@
    #:create-sequence #:drop-sequence
    #:truncate-table #:merge-into
    #:merge-update #:merge-delete #:merge-insert
+   #:type-attribute #:add-attribute #:drop-attribute #:rename-attribute
+   #:add-enum-value
+   #:add-attribute-clause #:drop-attribute-clause #:rename-attribute-clause
+   #:add-enum-value-clause
+   #:add-attribute-attribute #:drop-attribute-name
+   #:rename-attribute-old #:rename-attribute-new
+   #:add-enum-value-label #:add-enum-value-before #:add-enum-value-after
+   #:add-enum-value-if-not-exists
+   #:type-attribute-name #:type-attribute-type
+   #:create-type-name #:create-type-kind #:create-type-base-type
+   #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
+   #:create-type-base-options
+   #:create-table-of-type #:create-table-extras #:create-table-temporary
+   #:drop-type-name #:alter-type-name #:alter-type-actions
+   #:create-domain-name #:create-domain-base-type
+   #:drop-domain-name
 
    ;; expressions
    #:|=| #:|!=| #:|:<| #:|:>| #:|:<=| #:|:>=|
@@ -93,10 +129,11 @@
    #:exists #:subquery #:lateral
    #:label #:bindparam #:sql-raw #:typed #:typed-value
    #:function-call #:function-call-name #:function-call-args
+   #:function-call-filter #:function-call-within-group
    #:bind-param #:bind-param-name #:bind-param-value #:bind-param-default
    #:bind-param-sql-type #:bind-param-has-value #:bind-param-has-default
    #:bind-param-effective-value
-   #:over #:rows-frame #:range-frame
+   #:over #:window #:rows-frame #:range-frame
    #:rollup #:cube #:grouping-sets
    #:col #:lit #:ensure-expr #:parse-expr #:as-cte
 
@@ -118,8 +155,15 @@
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list
+   #:emit-tablesample #:emit-table-like #:emit-lock-table #:emit-set-transaction
+   ;; open dialect extension emit hooks
+   #:emit-extension
+   #:emit-alter-table-action
+   #:emit-create-table-extra
+   #:emit-create-type #:emit-create-type-kind
+   #:emit-alter-type-action
 
-   ;; extension registries (types / ops / funcs)
+   ;; extension registries (types / ops / funcs / AST)
    #:sql-type-def #:sql-op-def #:sql-func-def
    #:register-sql-type #:register-sql-op #:register-sql-func
    #:find-sql-type #:find-sql-op #:find-sql-func
@@ -128,10 +172,16 @@
    #:emit-typed-value #:registered-type-sql
    #:*sql-op-catalog* #:*sql-func-catalog*
    #:sql-func-sql-name #:sql-func-emit-fn
+   #:sql-extension-def #:sql-extension-name #:sql-extension-constructor
+   #:sql-extension-kind #:sql-extension-documentation
+   #:*sql-extension-registry*
+   #:register-sql-extension #:find-sql-extension
+   #:make-sql-extension #:list-sql-extensions
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique
-   #:column-def-default
+   #:column-def-default #:column-def-generated #:column-def-generated-as
+   #:column-def-stored
    #:create-procedure-name #:create-procedure-params #:create-procedure-body
    #:create-procedure-language #:create-procedure-or-replace
    #:procedure-param-name #:procedure-param-type #:procedure-param-mode
@@ -140,6 +190,7 @@
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
    #:for-update-of #:for-update-nowait #:for-update-skip-locked
+   #:for-update-strength
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 

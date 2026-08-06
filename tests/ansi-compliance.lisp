@@ -331,6 +331,47 @@
   (%assert-contains (%sql (create-index :ix (on :t) (columns :a :b) :unique))
                     "CREATE" "UNIQUE" "INDEX" "ON"))
 
+(deftest ansi-create-drop-type-distinct-and-structured
+  "SQL Foundation distinct + structured UDTs (not ENUM)."
+  (let ((distinct (%sql (create-type :euros :as '(:numeric 10 2))))
+        (structured (%sql (create-type :addr
+                                       :attributes '((:street :text)
+                                                     (:city :text)))))
+        (drop (%sql (drop-type :euros :if-exists t :cascade t))))
+    (%assert-contains distinct "CREATE TYPE" "AS" "NUMERIC(10,2)")
+    (%assert-contains structured "CREATE TYPE" "AS (")
+    (ok (search "\"street\"" structured))
+    (ok (search "\"city\"" structured))
+    (ok (search "CHARACTER VARYING" structured))
+    (%assert-contains drop "DROP TYPE" "IF EXISTS" "CASCADE")))
+
+(deftest ansi-alter-type-attributes
+  (let ((sql (%sql (alter-type :addr
+                               (add-attribute :zip :text)
+                               (drop-attribute :street)
+                               (rename-attribute :city :town)))))
+    (%assert-contains sql "ALTER TYPE" "ADD ATTRIBUTE" "DROP ATTRIBUTE"
+                      "RENAME ATTRIBUTE" "TO")))
+
+(deftest ansi-create-drop-domain
+  (let ((sql (%sql (create-domain :posint :as :integer
+                                  :default 1
+                                  :not-null t
+                                  :check (:> (col :value) 0))))
+        (drop (%sql (drop-domain :posint :if-exists t :cascade t))))
+    (%assert-contains sql "CREATE DOMAIN" "AS" "INTEGER" "DEFAULT" "NOT NULL" "CHECK")
+    (%assert-contains drop "DROP DOMAIN" "IF EXISTS" "CASCADE")))
+
+(deftest ansi-rejects-create-type-enum
+  (ok (signals (compile-sql (create-type :mood :enum '("a" "b"))
+                            :dialect (make-ansi-dialect))
+               'sql-dialect-unsupported)))
+
+(deftest ansi-rejects-alter-type-add-enum-value
+  (ok (signals (compile-sql (alter-type :mood (add-enum-value "meh"))
+                            :dialect (make-ansi-dialect))
+               'sql-dialect-unsupported)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; SQL/PSM
 ;;; ---------------------------------------------------------------------------
