@@ -61,8 +61,7 @@
   (let ((sql (%sql (select (columns (sql-func :percentile-cont 0.5
                                               :within-group '((:salary :desc))))
                            (from :emp)))))
-    (%assert-contains sql "WITHIN GROUP (ORDER BY" "DESC")
-    (ok (search "percentile-cont" sql :test #'char-equal))))
+    (%assert-contains sql "percentile_cont" "WITHIN GROUP (ORDER BY" "DESC")))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Named WINDOW + OVER name
