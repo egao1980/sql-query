@@ -52,6 +52,13 @@
    #:grant-statement
    #:revoke-statement
    #:comment-on-statement
+   #:create-assertion-statement
+   #:drop-assertion-statement
+   #:lock-table-statement
+   #:create-collation-statement
+   #:drop-collation-statement
+   #:create-character-set-statement
+   #:drop-character-set-statement
 
    ;; statement constructors (SQLAlchemy Core–shaped)
    #:select
