@@ -34,6 +34,33 @@
 (defmethod dialect-autoincrement-suffix ((dialect sqlite3-dialect))
   " AUTOINCREMENT")
 
+(defmethod emit-limit-offset ((dialect sqlite3-dialect) lim off stream ctx)
+  (when lim
+    (write-string " LIMIT " stream)
+    (emit-sql dialect (lit (limit-count lim)) stream ctx))
+  (when off
+    (write-string " OFFSET " stream)
+    (emit-sql dialect (lit (offset-count off)) stream ctx)))
+
+(defmethod emit-returning ((dialect sqlite3-dialect) items stream ctx)
+  (write-string " RETURNING " stream)
+  (emit-column-list dialect items stream ctx))
+
+(defmethod emit-for-update ((dialect sqlite3-dialect) clause stream ctx)
+  ;; SQLite has limited locking; emit plain FOR UPDATE if requested
+  (write-string " FOR UPDATE" stream)
+  (when (for-update-of clause)
+    (write-string " OF " stream)
+    (emit-column-list dialect (for-update-of clause) stream ctx)))
+
+(defmethod emit-distinct ((dialect sqlite3-dialect) clause stream ctx)
+  (when (distinct-on clause)
+    (error 'sql-dialect-unsupported
+           :feature :distinct-on
+           :dialect dialect
+           :message "SQLite has no DISTINCT ON"))
+  (write-string "DISTINCT " stream))
+
 (defmethod emit-create-procedure ((dialect sqlite3-dialect) stmt stream ctx)
   (declare (ignore stmt stream ctx))
   (error 'sql-dialect-unsupported

@@ -1,6 +1,6 @@
 (defsystem "sql-query"
   :version "0.1.0"
-  :description "Composable CLOS SQL DSL for cl-stack — ANSI Core; vendor dialects are backend systems"
+  :description "Composable CLOS SQL DSL for cl-stack — full ANSI SQL builtin; vendor dialects are backend systems"
   :author "egao1980"
   :license "MIT"
   :depends-on ("uiop" "sql-protocol")
@@ -26,7 +26,9 @@
   :pathname "tests"
   :serial t
   :components ((:file "package")
+               (:file "helpers")
                (:file "sql-query-test")
+               (:file "ansi-compliance")
                (:file "dialect-backend-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)

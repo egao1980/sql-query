@@ -219,13 +219,35 @@
 
 (defun %join (type table &rest rest)
   (let ((alias nil)
-        (on-expr nil))
+        (on-expr nil)
+        (using-cols nil)
+        (natural nil))
     (loop for x in rest
           do (cond
+               ((eq x :natural) (setf natural t))
                ((typep x 'on-clause) (setf on-expr (on-expr x)))
-               ((and (symbolp x) (not (typep x 'sql-node))) (setf alias x))
+               ((typep x 'using-clause) (setf using-cols (using-columns x)))
+               ((and (symbolp x) (not (typep x 'sql-node)) (not (keywordp x)))
+                (setf alias x))
+               ((keywordp x) (setf alias x))
                (t (setf on-expr (ensure-expr x)))))
-    (make-instance 'join-clause :type type :table table :alias alias :on on-expr)))
+    (make-instance 'join-clause :type type :table table :alias alias
+                               :on on-expr :using using-cols :natural natural)))
+
+(defun using (&rest columns)
+  (make-instance 'using-clause :columns (mapcar #'ensure-expr columns)))
+
+(defun natural-join (table &rest rest)
+  (apply #'%join :inner table :natural rest))
+
+(defun natural-left-join (table &rest rest)
+  (apply #'%join :left table :natural rest))
+
+(defun natural-right-join (table &rest rest)
+  (apply #'%join :right table :natural rest))
+
+(defun natural-full-join (table &rest rest)
+  (apply #'%join :full table :natural rest))
 
 (defun join (table &rest rest)
   (apply #'%join :inner table rest))
@@ -381,9 +403,12 @@
 (defun insert-into (table &rest clauses)
   (let ((normalized
           (mapcar (lambda (c)
-                    (if (typep c 'select-statement)
-                        (make-instance 'select-source-clause :select c)
-                        c))
+                    (cond
+                      ((typep c 'select-statement)
+                       (make-instance 'select-source-clause :select c))
+                      ((typep c 'values-selectable)
+                       (make-instance 'select-source-clause :select c))
+                      (t c)))
                   clauses)))
     (make-instance 'insert-statement :table table :clauses normalized)))
 
@@ -395,16 +420,18 @@
 
 (defun create-table (table &rest args)
   (let ((if-not-exists nil)
-        (cols nil))
+        (cols nil)
+        (constraints nil))
     (loop for a in args
           do (cond
                ((eq a :if-not-exists) (setf if-not-exists t))
-               ((and (keywordp a) (eq a :if-not-exists)) (setf if-not-exists t))
                ((typep a 'column-def) (push a cols))
+               ((typep a 'table-constraint) (push a constraints))
                (t (%err "create-table: unexpected ~s" a))))
     (make-instance 'create-table-statement
                    :table table
                    :columns (nreverse cols)
+                   :constraints (nreverse constraints)
                    :if-not-exists if-not-exists)))
 
 (defun drop-table (table &key if-exists)
@@ -484,3 +511,174 @@
 (defun %on-table (table)
   "Internal: treat (on :users) in create-index as table specifier."
   (make-instance 'on-clause :expr (col table)))
+
+;;; ---- ANSI Foundation constructors ----
+
+(defun is-distinct-from (left right)
+  (make-instance 'is-distinct-from-op
+                 :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun is-not-distinct-from (left right)
+  (make-instance 'is-distinct-from-op
+                 :left (ensure-expr left) :right (ensure-expr right) :not-p t))
+
+(defun similar-to (left pattern &key escape not)
+  (make-instance 'similar-to-op
+                 :left (ensure-expr left)
+                 :pattern (ensure-expr pattern)
+                 :escape (when escape (ensure-expr escape))
+                 :not-p not))
+
+(defun sql-any (left op subquery)
+  (make-instance 'quantified-op :op op :quantifier :any
+                 :left (ensure-expr left) :subquery subquery))
+
+(defun sql-all (left op subquery)
+  (make-instance 'quantified-op :op op :quantifier :all
+                 :left (ensure-expr left) :subquery subquery))
+
+(defun sql-some (left op subquery)
+  (make-instance 'quantified-op :op op :quantifier :some
+                 :left (ensure-expr left) :subquery subquery))
+
+(defun unique (query)
+  (make-instance 'unique-pred :query query))
+
+(defun collate (expr collation)
+  (make-instance 'collate-expr :expr (ensure-expr expr) :collation collation))
+
+(defun nullif (left right)
+  (make-instance 'nullif-expr :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun over (expr &key partition-by order-by frame)
+  (make-instance 'over-expr
+                 :expr (ensure-expr expr)
+                 :window (make-instance 'window-spec
+                                       :partition-by (mapcar #'ensure-expr (or partition-by nil))
+                                       :order-by (mapcar (lambda (i)
+                                                          (if (and (consp i) (not (typep i 'sql-node)))
+                                                              (list (ensure-expr (first i)) (or (second i) :asc))
+                                                              (list (ensure-expr i) :asc)))
+                                                        (or order-by nil))
+                                       :frame frame)))
+
+(defun rows-frame (start &optional end)
+  (make-instance 'window-frame :unit :rows :start start :end end))
+
+(defun range-frame (start &optional end)
+  (make-instance 'window-frame :unit :range :start start :end end))
+
+(defun rollup (&rest items)
+  (make-instance 'grouping-expr :kind :rollup :items (mapcar #'ensure-expr items)))
+
+(defun cube (&rest items)
+  (make-instance 'grouping-expr :kind :cube :items (mapcar #'ensure-expr items)))
+
+(defun grouping-sets (&rest sets)
+  (make-instance 'grouping-expr :kind :grouping-sets
+                 :items (mapcar (lambda (s)
+                                  (mapcar #'ensure-expr (if (listp s) s (list s))))
+                                sets)))
+
+(defun primary-key (&rest columns)
+  (make-instance 'primary-key-constraint :columns (mapcar #'ensure-expr columns)))
+
+(defun unique-key (&rest columns)
+  (make-instance 'unique-constraint :columns (mapcar #'ensure-expr columns)))
+
+(defun check (expr &key name)
+  (make-instance 'check-constraint :name name :expr (ensure-expr expr)))
+
+(defun foreign-key (columns &key references on-delete on-update match name)
+  (destructuring-bind (ref-table &rest ref-cols) (if (listp references) references (list references))
+    (make-instance 'foreign-key-constraint
+                   :name name
+                   :columns (mapcar #'ensure-expr (if (listp columns) columns (list columns)))
+                   :ref-table ref-table
+                   :ref-columns (mapcar #'ensure-expr ref-cols)
+                   :on-delete on-delete
+                   :on-update on-update
+                   :match match)))
+
+(defun add-constraint (constraint)
+  (make-instance 'add-constraint-clause :constraint constraint))
+
+(defun drop-constraint (name)
+  (make-instance 'drop-constraint-clause :name name))
+
+(defun rename-column (old new)
+  (make-instance 'rename-column-clause :old old :new new))
+
+(defun rename-to (new)
+  (make-instance 'rename-table-clause :new new))
+
+(defun values-row (&rest rows)
+  "ANSI VALUES selectable. Rows are lists of cells."
+  (let ((normalized (if (and rows (every #'listp rows))
+                        rows
+                        (list rows))))
+    (make-instance 'values-selectable
+                   :rows (mapcar (lambda (row)
+                                   (mapcar #'ensure-expr (if (listp row) row (list row))))
+                                 normalized))))
+
+(defun default-values ()
+  (make-instance 'default-values-clause))
+
+(defun create-view (name query &key columns or-replace recursive)
+  (make-instance 'create-view-statement
+                 :name name :query query :columns columns
+                 :or-replace or-replace :recursive recursive))
+
+(defun drop-view (name &key if-exists cascade)
+  (make-instance 'drop-view-statement :name name :if-exists if-exists :cascade cascade))
+
+(defun create-schema (name &key authorization if-not-exists)
+  (make-instance 'create-schema-statement
+                 :name name :authorization authorization :if-not-exists if-not-exists))
+
+(defun drop-schema (name &key if-exists cascade)
+  (make-instance 'drop-schema-statement :name name :if-exists if-exists :cascade cascade))
+
+(defun create-sequence (name &key start increment minvalue maxvalue cycle if-not-exists)
+  (make-instance 'create-sequence-statement
+                 :name name :start start :increment increment
+                 :minvalue minvalue :maxvalue maxvalue :cycle cycle
+                 :if-not-exists if-not-exists))
+
+(defun drop-sequence (name &key if-exists)
+  (make-instance 'drop-sequence-statement :name name :if-exists if-exists))
+
+(defun truncate-table (tables &key identity cascade)
+  (make-instance 'truncate-statement
+                 :tables (if (listp tables) tables (list tables))
+                 :identity identity
+                 :cascade cascade))
+
+(defun merge-into (table &key using on when-matched when-not-matched)
+  (make-instance 'merge-statement
+                 :table table
+                 :using using
+                 :on (ensure-expr on)
+                 :when-matched when-matched
+                 :when-not-matched when-not-matched))
+
+(defun merge-update (assignments &key where)
+  (make-instance 'merge-update-action
+                 :assignments (mapcar (lambda (a)
+                                        (if (typep a 'binary-op) a
+                                            (%err "merge-update expects :=")))
+                                      assignments)
+                 :where (when where (ensure-expr where))))
+
+(defun merge-delete (&key where)
+  (make-instance 'merge-delete-action
+                 :where (when where (ensure-expr where))))
+
+(defun merge-insert (values &key columns)
+  (make-instance 'merge-insert-action
+                 :columns (mapcar #'ensure-expr (or columns nil))
+                 :values (mapcar #'ensure-expr values)))
+
+(defun lateral (query &optional alias)
+  (make-instance 'lateral-subquery :query query :alias alias))

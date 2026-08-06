@@ -1,14 +1,5 @@
 (in-package #:sql-query/tests)
 
-(defun %compile (stmt &optional (dialect (make-ansi-dialect)))
-  (multiple-value-list (compile-sql stmt :dialect dialect)))
-
-(defun %sql (stmt &optional (dialect (make-ansi-dialect)))
-  (first (%compile stmt dialect)))
-
-(defun %params (stmt &optional (dialect (make-ansi-dialect)))
-  (second (%compile stmt dialect)))
-
 (deftest select-basic
   (let ((stmt (select (columns :id :name)
                       (from :users)
@@ -19,7 +10,8 @@
     (ok (search "FROM" (%sql stmt)))
     (ok (search "WHERE" (%sql stmt)))
     (ok (search "ORDER BY" (%sql stmt)))
-    (ok (search "LIMIT" (%sql stmt)))
+    (ok (search "FETCH FIRST" (%sql stmt)) "ANSI uses FETCH FIRST not LIMIT")
+    (ng (search "LIMIT" (%sql stmt)))
     (ok (equal '(1 10) (%params stmt)))))
 
 (deftest select-core-shapes
@@ -133,13 +125,17 @@
          (more (and-where base (:= :b 2)))
          (merged (merge-query base (limit 5))))
     (ok (equal '(1 2) (%params more)))
-    (ok (search "LIMIT" (%sql merged)))
+    (ok (search "FETCH FIRST" (%sql merged)))
     (ok (equal '(1 5) (%params merged)))
     (ok (equal '(1) (%params base)))))
 
-(deftest procedure-ansi-unsupported
-  (let ((stmt (create-procedure :bump
-                 (params (in :by :integer))
-                 (body (sql-fragment "UPDATE counters SET n = n + ?" 1)))))
-    (ok (signals (compile-sql stmt :dialect (make-ansi-dialect))
-                 'sql-dialect-unsupported))))
+(deftest procedure-ansi-sql-psm
+  (let* ((d (make-ansi-dialect))
+         (stmt (create-procedure :bump
+                  (params (in :by :integer))
+                  (body (sql-fragment "UPDATE counters SET n = n + ?" 1))))
+         (sql (%sql stmt d)))
+    (ok (search "CREATE PROCEDURE" sql))
+    (ok (search "BEGIN" sql))
+    (ok (search "END" sql))
+    (ok (search "CALL" (%sql (sql-call :bump 1) d)))))

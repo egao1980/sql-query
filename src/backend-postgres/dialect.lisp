@@ -40,6 +40,33 @@
 (defmethod dialect-autoincrement-suffix ((dialect postgres-dialect))
   "")
 
+(defmethod emit-limit-offset ((dialect postgres-dialect) lim off stream ctx)
+  (when lim
+    (write-string " LIMIT " stream)
+    (emit-sql dialect (lit (limit-count lim)) stream ctx))
+  (when off
+    (write-string " OFFSET " stream)
+    (emit-sql dialect (lit (offset-count off)) stream ctx)))
+
+(defmethod emit-returning ((dialect postgres-dialect) items stream ctx)
+  (write-string " RETURNING " stream)
+  (emit-column-list dialect items stream ctx))
+
+(defmethod emit-for-update ((dialect postgres-dialect) clause stream ctx)
+  (write-string " FOR UPDATE" stream)
+  (when (for-update-of clause)
+    (write-string " OF " stream)
+    (emit-column-list dialect (for-update-of clause) stream ctx))
+  (when (for-update-nowait clause) (write-string " NOWAIT" stream))
+  (when (for-update-skip-locked clause) (write-string " SKIP LOCKED" stream)))
+
+(defmethod emit-distinct ((dialect postgres-dialect) clause stream ctx)
+  (write-string "DISTINCT " stream)
+  (when (distinct-on clause)
+    (write-string "ON (" stream)
+    (emit-column-list dialect (distinct-on clause) stream ctx)
+    (write-string ") " stream)))
+
 (defmethod emit-column-def ((dialect postgres-dialect) col stream ctx)
   (emit-ident dialect (column-def-name col) stream)
   (write-char #\Space stream)

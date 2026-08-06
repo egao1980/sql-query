@@ -41,6 +41,12 @@ SxQL is **not** the public API.
 
 ## Tests
 
+First-party Rove suites (not vendored NIST/sqltest/slt):
+
+- `tests/ansi-compliance.lisp` — ANSI/ISO Foundation **emit** coverage + corner cases + negative vendorisms
+- `tests/sql-query-test.lisp` — Core DSL smoke
+- `tests/dialect-backend-test.lisp` — sqlite3 / postgres backends
+
 ```bash
 ros -e '(asdf:test-system "sql-query")' -q
 ```
