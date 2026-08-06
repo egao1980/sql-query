@@ -707,5 +707,96 @@ the driver when :value is absent. :type encodes that payload."
                  :columns (mapcar #'ensure-expr (or columns nil))
                  :values (mapcar #'ensure-expr values)))
 
+;;; ---------------------------------------------------------------------------
+;;; Types / domains
+;;; ---------------------------------------------------------------------------
+
+(defun type-attribute (name type)
+  "Attribute of a structured UDT: NAME with TYPE (keyword/spec)."
+  (make-instance 'type-attribute :name name :type type))
+
+(defun %normalize-type-attributes (attrs)
+  (mapcar (lambda (a)
+            (cond
+              ((typep a 'type-attribute) a)
+              ((and (consp a) (= 2 (length a)))
+               (type-attribute (first a) (second a)))
+              (t (%err "type attribute expects type-attribute or (name type), got ~s" a))))
+          attrs))
+
+(defun create-type (name &key as attributes enum if-not-exists)
+  "CREATE TYPE.
+
+  Distinct (ANSI):   (create-type :euros :as :numeric)
+  Structured (ANSI): (create-type :addr :attributes (list (type-attribute :city :text) …))
+                     or :attributes '((:city :text) (:zip :text))
+  Enum (postgres):   (create-type :mood :enum '(\"sad\" \"ok\" \"happy\"))
+
+  Exactly one of :AS, :ATTRIBUTES, or :ENUM."
+  (let ((n (count-if #'identity (list as attributes enum))))
+    (unless (= n 1)
+      (%err "create-type requires exactly one of :as, :attributes, or :enum")))
+  (cond
+    (as
+     (make-instance 'create-type-statement
+                    :name name :kind :distinct :base-type as
+                    :if-not-exists if-not-exists))
+    (attributes
+     (make-instance 'create-type-statement
+                    :name name :kind :structured
+                    :attributes (%normalize-type-attributes attributes)
+                    :if-not-exists if-not-exists))
+    (t
+     (make-instance 'create-type-statement
+                    :name name :kind :enum
+                    :enum-labels (mapcar (lambda (l)
+                                           (if (stringp l) l (string l)))
+                                         enum)
+                    :if-not-exists if-not-exists))))
+
+(defun drop-type (name &key if-exists cascade)
+  (make-instance 'drop-type-statement
+                 :name name :if-exists if-exists :cascade cascade))
+
+(defun add-attribute (name type)
+  (make-instance 'add-attribute-clause
+                 :attribute (type-attribute name type)))
+
+(defun drop-attribute (name)
+  (make-instance 'drop-attribute-clause :name name))
+
+(defun rename-attribute (old new)
+  (make-instance 'rename-attribute-clause :old old :new new))
+
+(defun add-enum-value (label &key before after if-not-exists)
+  "Postgres ALTER TYPE … ADD VALUE (rejected on ANSI)."
+  (make-instance 'add-enum-value-clause
+                 :label (if (stringp label) label (string label))
+                 :before before :after after
+                 :if-not-exists if-not-exists))
+
+(defun alter-type (name &rest actions)
+  (dolist (a actions)
+    (unless (typep a '(or add-attribute-clause drop-attribute-clause
+                          rename-attribute-clause add-enum-value-clause))
+      (%err "alter-type: unexpected action ~s" a)))
+  (make-instance 'alter-type-statement :name name :actions actions))
+
+(defun create-domain (name &key as default check not-null if-not-exists)
+  "CREATE DOMAIN name AS type [DEFAULT …] [NOT NULL] [CHECK (…)]."
+  (unless as
+    (%err "create-domain requires :as base type"))
+  (make-instance 'create-domain-statement
+                 :name name
+                 :base-type as
+                 :default default
+                 :check (when check (ensure-expr check))
+                 :not-null not-null
+                 :if-not-exists if-not-exists))
+
+(defun drop-domain (name &key if-exists cascade)
+  (make-instance 'drop-domain-statement
+                 :name name :if-exists if-exists :cascade cascade))
+
 (defun lateral (query &optional alias)
   (make-instance 'lateral-subquery :query query :alias alias))

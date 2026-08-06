@@ -28,6 +28,11 @@
    #:drop-index-statement
    #:create-procedure-statement
    #:call-statement
+   #:create-type-statement
+   #:drop-type-statement
+   #:alter-type-statement
+   #:create-domain-statement
+   #:drop-domain-statement
 
    ;; statement constructors (SQLAlchemy Core–shaped)
    #:select
@@ -44,6 +49,11 @@
    #:drop-index
    #:create-procedure
    #:sql-call
+   #:create-type
+   #:drop-type
+   #:alter-type
+   #:create-domain
+   #:drop-domain
 
    ;; clauses
    #:columns
@@ -77,6 +87,20 @@
    #:create-sequence #:drop-sequence
    #:truncate-table #:merge-into
    #:merge-update #:merge-delete #:merge-insert
+   #:type-attribute #:add-attribute #:drop-attribute #:rename-attribute
+   #:add-enum-value
+   #:add-attribute-clause #:drop-attribute-clause #:rename-attribute-clause
+   #:add-enum-value-clause
+   #:add-attribute-attribute #:drop-attribute-name
+   #:rename-attribute-old #:rename-attribute-new
+   #:add-enum-value-label #:add-enum-value-before #:add-enum-value-after
+   #:add-enum-value-if-not-exists
+   #:type-attribute-name #:type-attribute-type
+   #:create-type-name #:create-type-kind #:create-type-base-type
+   #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
+   #:drop-type-name #:alter-type-name #:alter-type-actions
+   #:create-domain-name #:create-domain-base-type
+   #:drop-domain-name
 
    ;; expressions
    #:|=| #:|!=| #:|:<| #:|:>| #:|:<=| #:|:>=|
@@ -140,6 +164,8 @@
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
    #:for-update-of #:for-update-nowait #:for-update-skip-locked
+
+   #:emit-create-type #:emit-alter-type-action
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 

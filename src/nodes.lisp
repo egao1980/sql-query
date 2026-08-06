@@ -459,3 +459,65 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 (defclass merge-insert-action (sql-node)
   ((columns :initarg :columns :reader merge-insert-columns :initform nil)
    (values :initarg :values :reader merge-insert-values)))
+
+;;; User-defined types / domains (SQL Foundation)
+
+(defclass type-attribute (sql-node)
+  ((name :initarg :name :reader type-attribute-name)
+   (type :initarg :type :reader type-attribute-type))
+  (:documentation "Attribute of a structured CREATE TYPE … AS (…)."))
+
+(defclass create-type-statement (sql-statement)
+  ((name :initarg :name :reader create-type-name)
+   (kind :initarg :kind :reader create-type-kind
+         :documentation ":distinct | :structured | :enum")
+   (base-type :initarg :base-type :reader create-type-base-type :initform nil
+              :documentation "Source type for distinct UDTs.")
+   (attributes :initarg :attributes :reader create-type-attributes :initform nil
+               :documentation "List of type-attribute for structured types.")
+   (enum-labels :initarg :enum-labels :reader create-type-enum-labels :initform nil
+                :documentation "String labels for ENUM (postgres extension).")
+   (if-not-exists :initarg :if-not-exists :reader create-type-if-not-exists
+                  :initform nil)))
+
+(defclass drop-type-statement (sql-statement)
+  ((name :initarg :name :reader drop-type-name)
+   (if-exists :initarg :if-exists :reader drop-type-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-type-cascade :initform nil)))
+
+(defclass alter-type-statement (sql-statement)
+  ((name :initarg :name :reader alter-type-name)
+   (actions :initarg :actions :reader alter-type-actions :initform nil)))
+
+(defclass add-attribute-clause (sql-clause)
+  ((attribute :initarg :attribute :reader add-attribute-attribute)))
+
+(defclass drop-attribute-clause (sql-clause)
+  ((name :initarg :name :reader drop-attribute-name)))
+
+(defclass rename-attribute-clause (sql-clause)
+  ((old :initarg :old :reader rename-attribute-old)
+   (new :initarg :new :reader rename-attribute-new)))
+
+(defclass add-enum-value-clause (sql-clause)
+  ((label :initarg :label :reader add-enum-value-label)
+   (before :initarg :before :reader add-enum-value-before :initform nil)
+   (after :initarg :after :reader add-enum-value-after :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader add-enum-value-if-not-exists
+                  :initform nil))
+  (:documentation "Postgres ALTER TYPE … ADD VALUE (not ANSI)."))
+
+(defclass create-domain-statement (sql-statement)
+  ((name :initarg :name :reader create-domain-name)
+   (base-type :initarg :base-type :reader create-domain-base-type)
+   (default :initarg :default :reader create-domain-default :initform nil)
+   (check :initarg :check :reader create-domain-check :initform nil
+          :documentation "sql-expr; ANSI domains often use VALUE in the predicate.")
+   (not-null :initarg :not-null :reader create-domain-not-null :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader create-domain-if-not-exists
+                  :initform nil)))
+
+(defclass drop-domain-statement (sql-statement)
+  ((name :initarg :name :reader drop-domain-name)
+   (if-exists :initarg :if-exists :reader drop-domain-if-exists :initform nil)
+   (cascade :initarg :cascade :reader drop-domain-cascade :initform nil)))

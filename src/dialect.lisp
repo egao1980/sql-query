@@ -934,6 +934,103 @@ when :value is omitted — it is not inlined into SQL."
     (write-string "IF EXISTS " stream))
   (emit-ident dialect (drop-index-name stmt) stream))
 
+;;; ---------------------------------------------------------------------------
+;;; CREATE / DROP / ALTER TYPE + DOMAIN
+;;; ---------------------------------------------------------------------------
+
+(defgeneric emit-create-type (dialect stmt stream ctx)
+  (:documentation "Emit CREATE TYPE. Default handles ANSI distinct/structured; ENUM is vendor.")
+  (:method ((dialect sql-dialect) stmt stream ctx)
+    (ecase (create-type-kind stmt)
+      (:distinct
+       (write-string "CREATE TYPE " stream)
+       (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
+       (emit-ident dialect (create-type-name stmt) stream)
+       (write-string " AS " stream)
+       (write-string (dialect-type-sql dialect (create-type-base-type stmt)) stream))
+      (:structured
+       (write-string "CREATE TYPE " stream)
+       (when (create-type-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
+       (emit-ident dialect (create-type-name stmt) stream)
+       (write-string " AS (" stream)
+       (loop for (attr . rest) on (create-type-attributes stmt)
+             do (emit-ident dialect (type-attribute-name attr) stream)
+                (write-char #\Space stream)
+                (write-string (dialect-type-sql dialect (type-attribute-type attr)) stream)
+                (when rest (write-string ", " stream)))
+       (write-char #\) stream))
+      (:enum
+       (error 'sql-dialect-unsupported
+              :feature :create-type-enum
+              :dialect dialect
+              :message "CREATE TYPE … AS ENUM is not ANSI SQL — use sql-query-postgres")))))
+
+(defmethod emit-sql (dialect (stmt create-type-statement) stream ctx)
+  (emit-create-type dialect stmt stream ctx))
+
+(defmethod emit-sql (dialect (stmt drop-type-statement) stream ctx)
+  (declare (ignore ctx))
+  (write-string "DROP TYPE " stream)
+  (when (drop-type-if-exists stmt) (write-string "IF EXISTS " stream))
+  (emit-ident dialect (drop-type-name stmt) stream)
+  (when (drop-type-cascade stmt) (write-string " CASCADE" stream)))
+
+(defgeneric emit-alter-type-action (dialect action stream ctx)
+  (:method ((dialect sql-dialect) (action add-attribute-clause) stream ctx)
+    (declare (ignore ctx))
+    (let ((attr (add-attribute-attribute action)))
+      (write-string "ADD ATTRIBUTE " stream)
+      (emit-ident dialect (type-attribute-name attr) stream)
+      (write-char #\Space stream)
+      (write-string (dialect-type-sql dialect (type-attribute-type attr)) stream)))
+  (:method ((dialect sql-dialect) (action drop-attribute-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "DROP ATTRIBUTE " stream)
+    (emit-ident dialect (drop-attribute-name action) stream))
+  (:method ((dialect sql-dialect) (action rename-attribute-clause) stream ctx)
+    (declare (ignore ctx))
+    (write-string "RENAME ATTRIBUTE " stream)
+    (emit-ident dialect (rename-attribute-old action) stream)
+    (write-string " TO " stream)
+    (emit-ident dialect (rename-attribute-new action) stream))
+  (:method ((dialect sql-dialect) (action add-enum-value-clause) stream ctx)
+    (declare (ignore action stream ctx))
+    (error 'sql-dialect-unsupported
+           :feature :alter-type-add-value
+           :dialect dialect
+           :message "ALTER TYPE … ADD VALUE is not ANSI SQL — use sql-query-postgres")))
+
+(defmethod emit-sql (dialect (stmt alter-type-statement) stream ctx)
+  (loop for (action . rest) on (alter-type-actions stmt)
+        do (write-string "ALTER TYPE " stream)
+           (emit-ident dialect (alter-type-name stmt) stream)
+           (write-char #\Space stream)
+           (emit-alter-type-action dialect action stream ctx)
+           (when rest (write-string "; " stream))))
+
+(defmethod emit-sql (dialect (stmt create-domain-statement) stream ctx)
+  (write-string "CREATE DOMAIN " stream)
+  (when (create-domain-if-not-exists stmt) (write-string "IF NOT EXISTS " stream))
+  (emit-ident dialect (create-domain-name stmt) stream)
+  (write-string " AS " stream)
+  (write-string (dialect-type-sql dialect (create-domain-base-type stmt)) stream)
+  (when (create-domain-default stmt)
+    (write-string " DEFAULT " stream)
+    (emit-sql dialect (ensure-expr (create-domain-default stmt)) stream ctx))
+  (when (create-domain-not-null stmt)
+    (write-string " NOT NULL" stream))
+  (when (create-domain-check stmt)
+    (write-string " CHECK (" stream)
+    (emit-sql dialect (create-domain-check stmt) stream ctx)
+    (write-char #\) stream)))
+
+(defmethod emit-sql (dialect (stmt drop-domain-statement) stream ctx)
+  (declare (ignore ctx))
+  (write-string "DROP DOMAIN " stream)
+  (when (drop-domain-if-exists stmt) (write-string "IF EXISTS " stream))
+  (emit-ident dialect (drop-domain-name stmt) stream)
+  (when (drop-domain-cascade stmt) (write-string " CASCADE" stream)))
+
 (defgeneric emit-create-procedure (dialect stmt stream ctx)
   (:method ((dialect sql-dialect) stmt stream ctx)
     (declare (ignore stream ctx))

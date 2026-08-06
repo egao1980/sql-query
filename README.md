@@ -60,9 +60,32 @@ Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core
 
 **Layer 1** — SQL-shaped nodes (`proc-if`, `proc-setf`, …) · **Layer 2** — lispy `body` macro. Postgres plpgsql overrides live in `sql-query-postgres`. Sqlite: unsupported.
 
+## Types / domains (DDL)
+
+```lisp
+;; ANSI distinct + structured UDTs
+(create-type :euros :as '(:numeric 10 2))
+(create-type :addr :attributes '((:street :text) (:city :text)))
+(alter-type :addr (add-attribute :zip :text) (drop-attribute :street))
+(drop-type :euros :if-exists t :cascade t)
+
+;; ANSI domains
+(create-domain :posint :as :integer :default 1 :not-null t
+               :check (:> (col :value) 0))
+(drop-domain :posint :if-exists t)
+
+;; Postgres ENUM (sql-query-postgres)
+(create-type :mood :enum '("sad" "ok" "happy"))
+(alter-type :mood (add-enum-value "meh" :after "ok"))
+```
+
+`register-sql-type` remains the Lisp↔value adapter (encode/decode); CREATE TYPE is schema DDL. SQLite rejects type/domain DDL (`sql-dialect-unsupported`).
+
+Still missing vs Foundation (later): `CREATE CAST` / `DROP CAST`, typed tables (`CREATE TABLE … OF`), base-type UDTs with INPUT/OUTPUT.
+
 ## Core surface (wave-1)
 
-`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL · `sql-fragment` · `make-sql-table` / `create-table-from`.
+`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL (incl. type/domain) · `sql-fragment` · `make-sql-table` / `create-table-from`.
 
 SxQL is **not** the public API.
 
