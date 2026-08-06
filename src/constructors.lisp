@@ -301,11 +301,17 @@ the driver when :value is absent. :type encodes that payload."
 (defun distinct (&rest on-exprs)
   (make-instance 'distinct-clause :on (mapcar #'ensure-expr on-exprs)))
 
-(defun for-update (&key of nowait skip-locked)
+(defun for-update (&key of nowait skip-locked (strength :update))
+  "Row lock clause. STRENGTH is :update (default), :share, :key-share, or :no-key-update."
   (make-instance 'for-update-clause
+                 :strength strength
                  :of (when of (mapcar #'ensure-expr (if (listp of) of (list of))))
                  :nowait nowait
                  :skip-locked skip-locked))
+
+(defun for-share (&key of nowait skip-locked)
+  "FOR SHARE — shorthand for (for-update :strength :share …)."
+  (for-update :of of :nowait nowait :skip-locked skip-locked :strength :share))
 
 (defun cte (name query &key recursive)
   (as-cte query name :recursive recursive))
@@ -820,6 +826,39 @@ the driver when :value is absent. :type encodes that payload."
 (defun drop-domain (name &key if-exists cascade)
   (make-instance 'drop-domain-statement
                  :name name :if-exists if-exists :cascade cascade))
+
+
+(defun create-trigger (name &key timing events table for-each condition
+                              function function-args body)
+  "CREATE TRIGGER. TIMING is :before|:after|:instead-of; EVENTS list of
+  :insert/:update/:delete. BODY is a statement list or raw node; FUNCTION is
+  EXECUTE PROCEDURE/FUNCTION name (vendor)."
+  (unless timing
+    (%err "create-trigger requires :timing"))
+  (unless events
+    (%err "create-trigger requires :events"))
+  (unless table
+    (%err "create-trigger requires :table"))
+  (unless (member timing '(:before :after :instead-of))
+    (%err "create-trigger :timing expects :before/:after/:instead-of, got ~s" timing))
+  (make-instance 'create-trigger-statement
+                 :name name
+                 :timing timing
+                 :events (if (listp events) events (list events))
+                 :table table
+                 :for-each (or for-each :statement)
+                 :condition (when condition (ensure-expr condition))
+                 :function function
+                 :function-args function-args
+                 :body (cond
+                         ((null body) nil)
+                         ((typep body 'body-clause) (body-forms body))
+                         ((and (listp body) (not (typep body 'sql-node))) body)
+                         (t (list body)))))
+
+(defun drop-trigger (name &key table if-exists cascade)
+  (make-instance 'drop-trigger-statement
+                 :name name :table table :if-exists if-exists :cascade cascade))
 
 (defun lateral (query &optional alias)
   (make-instance 'lateral-subquery :query query :alias alias))
