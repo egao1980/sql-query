@@ -1228,7 +1228,7 @@ when :value is omitted — it is not inlined into SQL."
 (defun %emit-privilege-list (privileges stream)
   (cond
     ((or (eq privileges t) (eq privileges :all))
-     (write-string "ALL" stream))
+     (write-string "ALL PRIVILEGES" stream))
     ((listp privileges)
      (loop for (p . rest) on privileges
            do (write-string (ctypecase p
@@ -1252,6 +1252,11 @@ when :value is omitted — it is not inlined into SQL."
                   (:all-tables-in-schema "ALL TABLES IN SCHEMA "))
                 stream))
 
+(defun %emit-grantee (dialect who stream)
+  (if (or (eq who :public) (eq who 'public) (equal who "PUBLIC") (equal who "public"))
+      (write-string "PUBLIC" stream)
+      (emit-ident dialect who stream)))
+
 (defmethod emit-sql (dialect (stmt create-cast-statement) stream ctx)
   (declare (ignore ctx))
   (write-string "CREATE CAST (" stream)
@@ -1263,10 +1268,11 @@ when :value is omitted — it is not inlined into SQL."
     ((create-cast-with-function stmt)
      (write-string " WITH FUNCTION " stream)
      (emit-ident dialect (create-cast-with-function stmt) stream))
-    ((create-cast-without-function stmt)
-     (write-string " WITHOUT FUNCTION" stream))
     ((create-cast-with-inout stmt)
-     (write-string " WITH INOUT" stream)))
+     (write-string " WITH INOUT" stream))
+    (t
+     ;; WITHOUT FUNCTION (explicit flag or default)
+     (write-string " WITHOUT FUNCTION" stream)))
   (when (create-cast-as stmt)
     (write-string (ecase (create-cast-as stmt)
                     (:assignment " AS ASSIGNMENT")
@@ -1307,12 +1313,13 @@ when :value is omitted — it is not inlined into SQL."
   (when (create-function-returns stmt)
     (write-string " RETURNS " stream)
     (write-string (dialect-type-sql dialect (create-function-returns stmt)) stream))
-  (when (create-function-language stmt)
-    (write-string " LANGUAGE " stream)
-    (write-string (ctypecase (create-function-language stmt)
-                    (string (string-upcase (create-function-language stmt)))
-                    (symbol (string-upcase (symbol-name (create-function-language stmt)))))
-                  stream))
+  (let ((lang (create-function-language stmt)))
+    (when lang
+      (write-string " LANGUAGE " stream)
+      (write-string (etypecase lang
+                      (string (string-upcase lang))
+                      (symbol (string-upcase (symbol-name lang))))
+                    stream)))
   (when (create-function-deterministic stmt)
     (write-string " DETERMINISTIC" stream))
   (when (create-function-body stmt)
@@ -1379,7 +1386,10 @@ when :value is omitted — it is not inlined into SQL."
            do (emit-sql dialect form stream ctx)
               (write-char #\; stream)
               (when rest (write-char #\Space stream)))
-     (write-string " END" stream))))
+     (write-string " END" stream))
+    (t
+     (error 'sql-query-error
+            :message "create-trigger requires :body or :function"))))
 
 (defmethod emit-sql (dialect (stmt drop-trigger-statement) stream ctx)
   (declare (ignore ctx))
@@ -1399,7 +1409,12 @@ when :value is omitted — it is not inlined into SQL."
   (%emit-grant-on-kind (grant-on-kind stmt) stream)
   (emit-ident dialect (grant-on stmt) stream)
   (write-string " TO " stream)
-  (emit-ident dialect (grant-to stmt) stream)
+  (let ((to (grant-to stmt)))
+    (if (and (listp to) (not (typep to 'sql-node)))
+        (loop for (g . rest) on to
+              do (%emit-grantee dialect g stream)
+                 (when rest (write-string ", " stream)))
+        (%emit-grantee dialect to stream)))
   (when (grant-with-grant-option stmt)
     (write-string " WITH GRANT OPTION" stream)))
 
@@ -1413,7 +1428,12 @@ when :value is omitted — it is not inlined into SQL."
   (%emit-grant-on-kind (revoke-on-kind stmt) stream)
   (emit-ident dialect (revoke-on stmt) stream)
   (write-string " FROM " stream)
-  (emit-ident dialect (revoke-from stmt) stream)
+  (let ((from (revoke-from stmt)))
+    (if (and (listp from) (not (typep from 'sql-node)))
+        (loop for (g . rest) on from
+              do (%emit-grantee dialect g stream)
+                 (when rest (write-string ", " stream)))
+        (%emit-grantee dialect from stream)))
   (when (revoke-cascade stmt) (write-string " CASCADE" stream)))
 
 (defun %emit-comment-on-kind (kind stream)
@@ -1426,7 +1446,8 @@ when :value is omitted — it is not inlined into SQL."
                   (:index "INDEX ")
                   (:sequence "SEQUENCE ")
                   (:function "FUNCTION ")
-                  (:trigger "TRIGGER "))
+                  (:trigger "TRIGGER ")
+                  (:view "VIEW "))
                 stream))
 
 (defmethod emit-sql (dialect (stmt comment-on-statement) stream ctx)
