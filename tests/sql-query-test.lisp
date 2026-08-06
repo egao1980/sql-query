@@ -108,16 +108,19 @@
     (ok (search "+" (%sql stmt)))
     (ok (equal '(3) (%params stmt)) "only bindparam contributes params")))
 
-(deftest bindparam-default-literal
+(deftest bindparam-default-for-execute
+  " :default supplies the prepare/execute param when :value is omitted — not SQL text."
   (let* ((stmt (select (columns :id)
                        (from :t)
                        (where (sql-and
-                               (:= :limit (bindparam :lim :default 10))
+                               (:= :n (bindparam :lim :default 10))
                                (:= :status (bindparam :st "pending" :default "active"))))))
          (sql (%sql stmt)))
-    (%assert-contains sql "COALESCE(" ", 10)" ", 'active'")
-    (ok (equal '(nil "pending") (%params stmt))
-        "no value → NIL bind (COALESCE uses literal); value present → that bind")))
+    (ok (search "?" sql))
+    (ng (search "COALESCE" sql))
+    (ng (search "10" sql) "default is not inlined")
+    (ok (equal '(10 "pending") (%params stmt))
+        "default used when no value; explicit value wins")))
 
 (deftest sql-fragment-nesting
   (let ((stmt (select (columns (sql-fragment "count(*) AS c"))

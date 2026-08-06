@@ -99,8 +99,8 @@
    (sql-type :initarg :sql-type :reader bind-param-sql-type :initform nil)
    (default :initarg :default :reader bind-param-default :initform nil)
    (has-default :initarg :has-default :reader bind-param-has-default :initform nil))
-  (:documentation "Explicit placeholder. Optional DEFAULT is emitted as a SQL literal
-via COALESCE(?, <literal>) — the bind wins when non-NULL at execute time."))
+  (:documentation "Explicit placeholder. Optional DEFAULT is the value used in the
+params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 
 (defclass subquery (sql-expr)
   ((query :initarg :query :reader subquery-query)

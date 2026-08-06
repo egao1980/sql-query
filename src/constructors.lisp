@@ -184,17 +184,15 @@ Use BINDPARAM when you need a placeholder."
   (make-instance 'labeled-expr :expr (ensure-expr expr) :name name))
 
 (defun bindparam (name &rest args)
-  "Explicit placeholder (? / $n).
+  "Explicit placeholder (? / $n) for prepare/execute.
 
-  (bindparam :x)                    ; param payload = name
-  (bindparam :x 1)                  ; or :value 1
-  (bindparam :x :type :integer)
-  (bindparam :x :default 10)        ; COALESCE(?, 10) — literal default
-  (bindparam :x v :default 10 :type :integer)
+  (bindparam :x)                     ; params get :x (name sentinel)
+  (bindparam :x 1)                   ; or :value 1
+  (bindparam :x :default 10)         ; params get 10 when value omitted
+  (bindparam :x v :default 10 :type :integer)  ; value wins over default
 
-DEFAULT is always inlined as SQL literal text (typed via :type when set).
-The placeholder still receives VALUE, or NIL when only :default is given
-(so COALESCE falls through to the literal)."
+:default is NOT inlined into SQL — it only supplies the bound value passed to
+the driver when :value is absent. :type encodes that payload."
   (let ((value nil) (valuep nil) (type nil)
         (default nil) (defaultp nil))
     (when (and args (not (keywordp (first args))))

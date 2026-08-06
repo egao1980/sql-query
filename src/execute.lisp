@@ -10,17 +10,21 @@
             (gethash :ansi *sql-dialect-registry*)
             (make-ansi-dialect)))))
 
-(defun execute-query (connection statement &key dialect)
-  "Compile STATEMENT and execute on CONNECTION. Returns sql-protocol result."
+(defun execute-query (connection statement &key dialect params)
+  "Compile STATEMENT and execute on CONNECTION.
+PARAMS when provided replaces the compiled bind list (which already includes
+bindparam :default values). Returns sql-protocol result."
   (let ((d (or dialect (dialect-for-connection connection))))
-    (multiple-value-bind (sql params)
+    (multiple-value-bind (sql compiled-params)
         (compile-sql statement :dialect d)
-      (sql-protocol:execute connection sql params))))
+      (sql-protocol:execute connection sql (or params compiled-params)))))
 
-(defun fetch-query (connection statement &key dialect)
+(defun fetch-query (connection statement &key dialect params)
   "Execute STATEMENT and fetch one row (plist) or NIL."
-  (sql-protocol:fetch (execute-query connection statement :dialect dialect)))
+  (sql-protocol:fetch
+   (execute-query connection statement :dialect dialect :params params)))
 
-(defun fetch-all-query (connection statement &key dialect)
+(defun fetch-all-query (connection statement &key dialect params)
   "Execute STATEMENT and fetch all rows."
-  (sql-protocol:fetch-all (execute-query connection statement :dialect dialect)))
+  (sql-protocol:fetch-all
+   (execute-query connection statement :dialect dialect :params params)))
