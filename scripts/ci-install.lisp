@@ -26,7 +26,7 @@
  (lambda ()
    (cl-repo:ensure-system-dependencies "sql-query"
      :also-tests t
-     :with '("sql-backend-sqlite3"))))
+     :with '("sql-query-sqlite3" "sql-query-postgres" "sql-backend-sqlite3"))))
 
 (format t "~&; ci: install phase done~%")
 (uiop:quit 0)

@@ -1,6 +1,6 @@
-(in-package #:sql-query)
+(in-package #:sql-query-postgres)
 
-(defclass postgres-dialect (sql-dialect) ())
+(defclass postgres-dialect (ansi-dialect) ())
 
 (defun make-postgres-dialect ()
   (make-instance 'postgres-dialect))
@@ -15,18 +15,23 @@
      (case type-spec
        ((:integer :int) "INTEGER")
        ((:bigint) "BIGINT")
+       ((:smallint) "SMALLINT")
        ((:text :string) "TEXT")
        ((:boolean :bool) "BOOLEAN")
        ((:real :float) "REAL")
        ((:double) "DOUBLE PRECISION")
-       ((:blob :bytea) "BYTEA")
+       ((:blob :bytea :binary) "BYTEA")
        ((:timestamp) "TIMESTAMP")
        ((:timestamptz) "TIMESTAMPTZ")
        ((:date) "DATE")
+       ((:time) "TIME")
        ((:serial) "SERIAL")
+       ((:numeric :decimal) "NUMERIC")
        (otherwise (call-next-method))))
     ((and (consp type-spec) (eq (first type-spec) :varchar))
      (format nil "VARCHAR(~a)" (second type-spec)))
+    ((and (consp type-spec) (eq (first type-spec) :char))
+     (format nil "CHAR(~a)" (second type-spec)))
     (t (call-next-method))))
 
 (defmethod dialect-autoincrement-pk ((dialect postgres-dialect))
@@ -86,8 +91,17 @@
   (loop for (arg . rest) on (call-args stmt)
         do (cond
              ((typep arg 'binary-op)
-              ;; named: ignore name for CALL positional wave-1
               (emit-sql dialect (binary-op-right arg) stream ctx))
              (t (emit-sql dialect (ensure-expr arg) stream ctx)))
            (when rest (write-string ", " stream)))
   (write-char #\) stream))
+
+(defun use-postgres-dialect ()
+  "Register :postgres dialect (does not steal *SQL-DIALECT* unless unbound). Returns dialect."
+  (let ((d (make-postgres-dialect)))
+    (register-sql-dialect :postgres d)
+    (unless *sql-dialect*
+      (setf *sql-dialect* d))
+    d))
+
+(use-postgres-dialect)

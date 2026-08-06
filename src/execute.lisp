@@ -6,12 +6,9 @@
              (driver (and raw
                           (ignore-errors
                             (funcall (find-symbol "CONNECTION-DRIVER-TYPE" :dbi) raw)))))
-        (case driver
-          (:postgres (make-postgres-dialect))
-          (:sqlite3 (make-sqlite3-dialect))
-          (otherwise
-           (or (when *sql-dialect* *sql-dialect*)
-               (make-sqlite3-dialect)))))))
+        (or (and driver (gethash driver *sql-dialect-registry*))
+            (gethash :ansi *sql-dialect-registry*)
+            (make-ansi-dialect)))))
 
 (defun execute-query (connection statement &key dialect)
   "Compile STATEMENT and execute on CONNECTION. Returns sql-protocol result."

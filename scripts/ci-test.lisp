@@ -26,7 +26,7 @@
 (call-with-ci-muffles
  (lambda ()
    (dolist (n '("dbd-sqlite3" "dbi" "sqlite" "bordeaux-threads" "sql-protocol"
-                "sql-backend-sqlite3" "rove"))
+                "sql-backend-sqlite3" "sql-query-sqlite3" "sql-query-postgres" "rove"))
      (unless (asdf:find-system n nil)
        (ql:quickload n :silent t)))
    (asdf:test-system "sql-query")))

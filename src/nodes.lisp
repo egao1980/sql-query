@@ -60,6 +60,45 @@
 (defclass raw-sql (sql-expr)
   ((text :initarg :text :reader raw-sql-text)))
 
+(defclass between-op (sql-expr)
+  ((operand :initarg :operand :reader between-operand)
+   (low :initarg :low :reader between-low)
+   (high :initarg :high :reader between-high)
+   (not-p :initarg :not-p :reader between-not-p :initform nil)))
+
+(defclass case-expr (sql-expr)
+  ((whens :initarg :whens :reader case-whens) ; list of (condition . result)
+   (else :initarg :else :reader case-else :initform nil)))
+
+(defclass cast-expr (sql-expr)
+  ((expr :initarg :expr :reader cast-expr-of)
+   (type :initarg :type :reader cast-type)))
+
+(defclass function-call (sql-expr)
+  ((name :initarg :name :reader function-call-name)
+   (args :initarg :args :reader function-call-args :initform nil)))
+
+(defclass exists-op (sql-expr)
+  ((query :initarg :query :reader exists-query)))
+
+(defclass labeled-expr (sql-expr)
+  ((expr :initarg :expr :reader labeled-expr-of)
+   (name :initarg :name :reader labeled-name)))
+
+(defclass bind-param (sql-expr)
+  ((name :initarg :name :reader bind-param-name)
+   (value :initarg :value :reader bind-param-value :initform nil)
+   (has-value :initarg :has-value :reader bind-param-has-value :initform nil)))
+
+(defclass subquery (sql-expr)
+  ((query :initarg :query :reader subquery-query)
+   (alias :initarg :alias :reader subquery-alias :initform nil)))
+
+(defclass cte-node (sql-node)
+  ((name :initarg :name :reader cte-name)
+   (query :initarg :query :reader cte-query)
+   (recursive :initarg :recursive :reader cte-recursive :initform nil)))
+
 ;;; clauses
 
 (defclass sql-clause (sql-node) ())
@@ -133,10 +172,35 @@
 (defclass body-clause (sql-clause)
   ((forms :initarg :forms :reader body-forms)))
 
+(defclass distinct-clause (sql-clause)
+  ((on :initarg :on :reader distinct-on :initform nil))) ; nil = DISTINCT; list = DISTINCT ON (…)
+
+(defclass for-update-clause (sql-clause)
+  ((of :initarg :of :reader for-update-of :initform nil)
+   (nowait :initarg :nowait :reader for-update-nowait :initform nil)
+   (skip-locked :initarg :skip-locked :reader for-update-skip-locked :initform nil)))
+
+(defclass with-cte-clause (sql-clause)
+  ((ctes :initarg :ctes :reader with-cte-ctes)))
+
+(defclass select-source-clause (sql-clause)
+  ((select :initarg :select :reader select-source-select))
+  (:documentation "INSERT … SELECT source (Core insert().from_select)."))
+
+;;; schema (Core Table lite)
+
+(defclass sql-table (sql-node)
+  ((name :initarg :name :reader sql-table-name)
+   (columns :initarg :columns :reader sql-table-columns :initform nil)))
+
 ;;; statements
 
 (defclass select-statement (sql-statement)
   ((clauses :initarg :clauses :accessor statement-clauses :initform nil)))
+
+(defclass compound-select-statement (sql-statement)
+  ((op :initarg :op :reader compound-op) ; :union :union-all :intersect …
+   (selects :initarg :selects :reader compound-selects)))
 
 (defclass insert-statement (sql-statement)
   ((table :initarg :table :reader insert-table)

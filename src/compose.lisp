@@ -21,6 +21,11 @@
                  :table (delete-table node)
                  :clauses (copy-list (statement-clauses node))))
 
+(defmethod copy-sql ((node compound-select-statement))
+  (make-instance 'compound-select-statement
+                 :op (compound-op node)
+                 :selects (copy-list (compound-selects node))))
+
 (defun %find-clause (clauses type)
   (find-if (lambda (c) (typep c type)) clauses))
 

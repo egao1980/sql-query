@@ -69,6 +69,16 @@
          (:like (sql-like (first args) (second args)))
          (:is-null (sql-is-null (first args)))
          (:is-not-null (sql-is-not-null (first args)))
+         (:between (sql-between (first args) (second args) (third args)))
+         (:not-between (sql-between (first args) (second args) (third args) :not t))
+         (:+ (:+ (first args) (second args)))
+         (:- (:- (first args) (second args)))
+         (:* (:* (first args) (second args)))
+         (:/ (:/ (first args) (second args)))
+         (:exists (exists (first args)))
+         (:func (apply #'sql-func (first args) (rest args)))
+         (:case (apply #'sql-case args))
+         (:cast (sql-cast (first args) (second args)))
          (otherwise
           (%err "unknown expression operator ~s" op)))))))
 
@@ -89,6 +99,18 @@
 
 (defun :>= (left right)
   (make-instance 'binary-op :op :>= :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun :+ (left right)
+  (make-instance 'binary-op :op :+ :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun :- (left right)
+  (make-instance 'binary-op :op :- :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun :* (left right)
+  (make-instance 'binary-op :op :* :left (ensure-expr left) :right (ensure-expr right)))
+
+(defun :/ (left right)
+  (make-instance 'binary-op :op :/ :left (ensure-expr left) :right (ensure-expr right)))
 
 (defun sql-and (&rest exprs)
   (make-instance 'nary-op :op :and :operands (mapcar #'ensure-expr exprs)))
@@ -111,6 +133,70 @@
 
 (defun sql-is-not-null (operand)
   (make-instance 'is-null-op :operand (ensure-expr operand) :not-p t))
+
+(defun sql-between (operand low high &key not)
+  (make-instance 'between-op
+                 :operand (ensure-expr operand)
+                 :low (ensure-expr low)
+                 :high (ensure-expr high)
+                 :not-p not))
+
+(defun sql-case (&rest args)
+  "Core case(): (sql-case cond1 val1 cond2 val2 :else default)."
+  (let ((whens nil)
+        (else nil)
+        (rest args))
+    (loop while rest
+          do (let ((a (pop rest)))
+               (cond
+                 ((eq a :else) (setf else (ensure-expr (pop rest))))
+                 (t (push (cons (ensure-expr a) (ensure-expr (pop rest))) whens)))))
+    (make-instance 'case-expr :whens (nreverse whens) :else else)))
+
+(defun sql-cast (expr type)
+  (make-instance 'cast-expr :expr (ensure-expr expr) :type type))
+
+(defun sql-func (name &rest args)
+  (make-instance 'function-call
+                 :name name
+                 :args (mapcar (lambda (a)
+                                 (if (eq a :*)
+                                     (sql-raw "*")
+                                     (ensure-expr a)))
+                               args)))
+
+(defun count (&optional (expr :*))
+  (sql-func :count expr))
+
+(defun coalesce (&rest args)
+  (apply #'sql-func :coalesce args))
+
+(defun exists (query)
+  (make-instance 'exists-op :query query))
+
+(defun subquery (query &optional alias)
+  (make-instance 'subquery :query query :alias alias))
+
+(defun label (expr name)
+  (make-instance 'labeled-expr :expr (ensure-expr expr) :name name))
+
+(defun bindparam (name &optional (value nil valuep))
+  (make-instance 'bind-param :name name :value value :has-value valuep))
+
+(defun as-cte (query name &key recursive)
+  (make-instance 'cte-node :name name :query query :recursive recursive))
+
+(defun make-sql-table (name &rest columns)
+  (make-instance 'sql-table :name name :columns columns))
+
+(defun table-column (name &rest keys &key &allow-other-keys)
+  (apply #'column name keys))
+
+(defun create-table-from (table &key if-not-exists)
+  (check-type table sql-table)
+  (apply #'create-table (sql-table-name table)
+         (append (when if-not-exists (list :if-not-exists))
+                 (sql-table-columns table))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Clause constructors
@@ -149,6 +235,34 @@
 
 (defun left-join (table &rest rest)
   (apply #'%join :left table rest))
+
+(defun right-join (table &rest rest)
+  (apply #'%join :right table rest))
+
+(defun full-join (table &rest rest)
+  (apply #'%join :full table rest))
+
+(defun cross-join (table &rest rest)
+  (apply #'%join :cross table rest))
+
+(defun distinct (&rest on-exprs)
+  (make-instance 'distinct-clause :on (mapcar #'ensure-expr on-exprs)))
+
+(defun for-update (&key of nowait skip-locked)
+  (make-instance 'for-update-clause
+                 :of (when of (mapcar #'ensure-expr (if (listp of) of (list of))))
+                 :nowait nowait
+                 :skip-locked skip-locked))
+
+(defun cte (name query &key recursive)
+  (as-cte query name :recursive recursive))
+
+(defun with-cte (&rest ctes)
+  (make-instance 'with-cte-clause
+                 :ctes (mapcar (lambda (c)
+                                 (if (typep c 'cte-node) c
+                                     (%err "with-cte expects cte-node, got ~s" c)))
+                               ctes)))
 
 (defun group-by (&rest items)
   (make-instance 'group-by-clause :items (mapcar #'ensure-expr items)))
@@ -254,8 +368,24 @@
 (defun select (&rest clauses)
   (make-instance 'select-statement :clauses clauses))
 
+(defun %compound (op &rest selects)
+  (make-instance 'compound-select-statement :op op :selects selects))
+
+(defun union (&rest selects) (apply #'%compound :union selects))
+(defun union-all (&rest selects) (apply #'%compound :union-all selects))
+(defun intersect (&rest selects) (apply #'%compound :intersect selects))
+(defun intersect-all (&rest selects) (apply #'%compound :intersect-all selects))
+(defun except (&rest selects) (apply #'%compound :except selects))
+(defun except-all (&rest selects) (apply #'%compound :except-all selects))
+
 (defun insert-into (table &rest clauses)
-  (make-instance 'insert-statement :table table :clauses clauses))
+  (let ((normalized
+          (mapcar (lambda (c)
+                    (if (typep c 'select-statement)
+                        (make-instance 'select-source-clause :select c)
+                        c))
+                  clauses)))
+    (make-instance 'insert-statement :table table :clauses normalized)))
 
 (defun update (table &rest clauses)
   (make-instance 'update-statement :table table :clauses clauses))
