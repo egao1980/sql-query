@@ -91,6 +91,8 @@
    #:sql-func #:count #:coalesce
    #:exists #:subquery #:lateral
    #:label #:bindparam #:sql-raw #:typed #:typed-value
+   #:bind-param #:bind-param-name #:bind-param-value #:bind-param-default
+   #:bind-param-sql-type #:bind-param-has-value #:bind-param-has-default
    #:over #:rows-frame #:range-frame
    #:rollup #:cube #:grouping-sets
    #:col #:lit #:ensure-expr #:parse-expr #:as-cte

@@ -218,17 +218,33 @@ NIL → NULL, T → TRUE, :FALSE → FALSE, numbers/strings/chars as SQL literal
   (write-string " AS " stream)
   (emit-ident dialect (labeled-name node) stream))
 
-(defmethod emit-sql (dialect (node bind-param) stream ctx)
-  "Explicit placeholder. Optional :type encodes and may wrap CAST(? AS …)."
-  (let ((ty (bind-param-sql-type node))
-        (raw (if (bind-param-has-value node)
-                 (bind-param-value node)
-                 (bind-param-name node))))
+(defun %emit-bind-placeholder (dialect node stream ctx)
+  "Emit the ?/$n side of a bindparam (with optional type CAST)."
+  (let* ((ty (bind-param-sql-type node))
+         (raw (cond
+                ((bind-param-has-value node) (bind-param-value node))
+                ((bind-param-has-default node) nil) ; NULL → COALESCE picks literal
+                (t (bind-param-name node)))))
     (if ty
         (emit-typed-value dialect ty raw stream ctx :bind t)
         (progn
           (emit-placeholder dialect stream ctx)
           (push-param ctx raw)))))
+
+(defmethod emit-sql (dialect (node bind-param) stream ctx)
+  "Explicit placeholder. :default → COALESCE(?, <literal>). :type → typed encode."
+  (if (bind-param-has-default node)
+      (progn
+        (write-string "COALESCE(" stream)
+        (%emit-bind-placeholder dialect node stream ctx)
+        (write-string ", " stream)
+        (let ((ty (bind-param-sql-type node))
+              (d (bind-param-default node)))
+          (if ty
+              (emit-typed-value dialect ty d stream ctx :bind nil)
+              (emit-sql-literal dialect d stream)))
+        (write-char #\) stream))
+      (%emit-bind-placeholder dialect node stream ctx)))
 
 (defun emit-from-item (dialect item stream ctx &optional alias)
   (cond

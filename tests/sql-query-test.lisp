@@ -108,6 +108,17 @@
     (ok (search "+" (%sql stmt)))
     (ok (equal '(3) (%params stmt)) "only bindparam contributes params")))
 
+(deftest bindparam-default-literal
+  (let* ((stmt (select (columns :id)
+                       (from :t)
+                       (where (sql-and
+                               (:= :limit (bindparam :lim :default 10))
+                               (:= :status (bindparam :st "pending" :default "active"))))))
+         (sql (%sql stmt)))
+    (%assert-contains sql "COALESCE(" ", 10)" ", 'active'")
+    (ok (equal '(nil "pending") (%params stmt))
+        "no value → NIL bind (COALESCE uses literal); value present → that bind")))
+
 (deftest sql-fragment-nesting
   (let ((stmt (select (columns (sql-fragment "count(*) AS c"))
                       (from :users)

@@ -183,13 +183,34 @@ Use BINDPARAM when you need a placeholder."
 (defun label (expr name)
   (make-instance 'labeled-expr :expr (ensure-expr expr) :name name))
 
-(defun bindparam (name &optional (value nil valuep) &key type)
-  "Named bind. Optional TYPE encodes/emits VALUE via the dialect type adapter."
-  (make-instance 'bind-param
-                 :name name
-                 :value value
-                 :has-value valuep
-                 :sql-type type))
+(defun bindparam (name &rest args)
+  "Explicit placeholder (? / $n).
+
+  (bindparam :x)                    ; param payload = name
+  (bindparam :x 1)                  ; or :value 1
+  (bindparam :x :type :integer)
+  (bindparam :x :default 10)        ; COALESCE(?, 10) — literal default
+  (bindparam :x v :default 10 :type :integer)
+
+DEFAULT is always inlined as SQL literal text (typed via :type when set).
+The placeholder still receives VALUE, or NIL when only :default is given
+(so COALESCE falls through to the literal)."
+  (let ((value nil) (valuep nil) (type nil)
+        (default nil) (defaultp nil))
+    (when (and args (not (keywordp (first args))))
+      (setf value (pop args) valuep t))
+    (loop for (k v) on args by #'cddr
+          do (ecase k
+               (:value (setf value v valuep t))
+               (:type (setf type v))
+               (:default (setf default v defaultp t))))
+    (make-instance 'bind-param
+                   :name name
+                   :value value
+                   :has-value valuep
+                   :sql-type type
+                   :default default
+                   :has-default defaultp)))
 
 (defun as-cte (query name &key recursive)
   (make-instance 'cte-node :name name :query query :recursive recursive))

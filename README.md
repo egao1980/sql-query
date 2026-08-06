@@ -47,6 +47,7 @@ Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
 
 (typed value :money)               ; or (lit value :money) — inlined via type encode
 (bindparam :x v :type :money)      ; explicit placeholder (+ encode)
+(bindparam :lim :default 10)       ; COALESCE(?, 10) — literal default
 (sql-type-write dialect :money v)  ; → sql-expr
 (sql-type-read dialect :money db)  ; → Lisp
 

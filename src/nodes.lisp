@@ -96,7 +96,11 @@
   ((name :initarg :name :reader bind-param-name)
    (value :initarg :value :reader bind-param-value :initform nil)
    (has-value :initarg :has-value :reader bind-param-has-value :initform nil)
-   (sql-type :initarg :sql-type :reader bind-param-sql-type :initform nil)))
+   (sql-type :initarg :sql-type :reader bind-param-sql-type :initform nil)
+   (default :initarg :default :reader bind-param-default :initform nil)
+   (has-default :initarg :has-default :reader bind-param-has-default :initform nil))
+  (:documentation "Explicit placeholder. Optional DEFAULT is emitted as a SQL literal
+via COALESCE(?, <literal>) — the bind wins when non-NULL at execute time."))
 
 (defclass subquery (sql-expr)
   ((query :initarg :query :reader subquery-query)
