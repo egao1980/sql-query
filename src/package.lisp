@@ -25,6 +25,12 @@
    #:delete-statement
    #:compound-select-statement
    #:create-table-statement
+   #:create-table-as-statement
+   #:start-transaction-statement
+   #:commit-statement
+   #:rollback-statement
+   #:savepoint-statement
+   #:release-savepoint-statement
    #:drop-table-statement
    #:alter-table-statement
    #:create-index-statement
@@ -36,6 +42,23 @@
    #:alter-type-statement
    #:create-domain-statement
    #:drop-domain-statement
+   #:alter-domain-statement
+   #:create-cast-statement
+   #:drop-cast-statement
+   #:create-function-statement
+   #:drop-function-statement
+   #:create-trigger-statement
+   #:drop-trigger-statement
+   #:grant-statement
+   #:revoke-statement
+   #:comment-on-statement
+   #:create-assertion-statement
+   #:drop-assertion-statement
+   #:lock-table-statement
+   #:create-collation-statement
+   #:drop-collation-statement
+   #:create-character-set-statement
+   #:drop-character-set-statement
 
    ;; statement constructors (SQLAlchemy Core–shaped)
    #:select
@@ -46,6 +69,10 @@
    #:intersect #:intersect-all
    #:except #:except-all
    #:create-table
+   #:create-table-as
+   #:start-transaction #:set-transaction
+   #:sql-commit #:sql-rollback
+   #:sql-savepoint #:sql-release-savepoint
    #:create-table-like #:table-like
    #:drop-table
    #:alter-table
@@ -58,9 +85,16 @@
    #:alter-type
    #:create-domain
    #:drop-domain
+   #:alter-domain
+   #:set-default #:drop-default #:set-not-null #:drop-not-null #:set-data-type
+   #:alter-column
+   #:create-cast #:drop-cast
+   #:create-function #:drop-function
+   #:create-trigger #:drop-trigger
+   #:grant #:revoke
+   #:comment-on
    #:create-assertion #:drop-assertion
    #:lock-table
-   #:set-transaction
    #:create-collation #:drop-collation
    #:create-character-set #:drop-character-set
 
@@ -109,10 +143,18 @@
    #:create-type-name #:create-type-kind #:create-type-base-type
    #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
    #:create-type-base-options
-   #:create-table-of-type #:create-table-extras #:create-table-temporary
+   #:create-table-of-type #:create-table-extras
+   #:create-table-as-table #:create-table-as-query
+   #:create-table-as-temporary #:create-table-as-if-not-exists
+   #:create-table-as-columns
+   #:table-constraint-name #:table-constraint-deferrable #:table-constraint-initially
+   #:like-op-escape #:like-op-not-p
    #:drop-type-name #:alter-type-name #:alter-type-actions
    #:create-domain-name #:create-domain-base-type
    #:drop-domain-name
+   #:alter-domain-name #:alter-domain-actions
+   #:create-table-temporary #:create-table-on-commit
+   #:create-view-temporary #:create-view-check-option
 
    ;; expressions
    #:|=| #:|!=| #:|:<| #:|:>| #:|:<=| #:|:>=|
@@ -154,6 +196,7 @@
    #:emit-sql-literal
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
+   #:emit-insert-prefix #:emit-insert-extras #:emit-trigger-execute
    #:emit-join #:emit-column-list
    #:emit-tablesample #:emit-table-like #:emit-lock-table #:emit-set-transaction
    ;; open dialect extension emit hooks
@@ -162,6 +205,7 @@
    #:emit-create-table-extra
    #:emit-create-type #:emit-create-type-kind
    #:emit-alter-type-action
+   #:emit-alter-domain-action
 
    ;; extension registries (types / ops / funcs / AST)
    #:sql-type-def #:sql-op-def #:sql-func-def
@@ -189,8 +233,12 @@
    #:binary-op #:binary-op-left #:binary-op-right #:binary-op-op
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
-   #:for-update-of #:for-update-nowait #:for-update-skip-locked
-   #:for-update-strength
+   #:for-update-of #:for-update-nowait #:for-update-skip-locked #:for-update-strength
+   #:statement-clauses #:insert-table
+   #:create-trigger-name #:create-trigger-timing #:create-trigger-events
+   #:create-trigger-table #:create-trigger-for-each #:create-trigger-condition
+   #:create-trigger-function #:create-trigger-function-args #:create-trigger-body
+   #:drop-trigger-name #:drop-trigger-table #:drop-trigger-if-exists #:drop-trigger-cascade
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 

@@ -45,6 +45,9 @@ Vendor dialects add non-standard AST **without** editing core `typecase`s:
 | `emit-alter-type-action` | open `ALTER TYPE` actions |
 | `emit-create-type-kind` | open `CREATE TYPE` kinds (`eql :enum`, `eql :base`, …) |
 | `emit-create-table-extra` | trailing `CREATE TABLE` bits (`INHERITS`, …) |
+| `emit-insert-prefix` / `emit-insert-extras` | `INSERT OR …` / `ON CONFLICT` hooks |
+| `emit-trigger-execute` | `EXECUTE FUNCTION` / `PROCEDURE` / body |
+| `for-share` / `for-update :strength` | row lock strengths |
 | `emit-extension` | family fallback for a dialect |
 | `register-sql-extension` | optional keyword → constructor registry |
 
@@ -110,15 +113,17 @@ Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core
 
 Typed tables: `(create-table :people :of :person-t)`. Vendor trailing clauses go in `create-table-extras` / open `sql-node` args.
 
+Also shipped: `CREATE CAST` / `DROP CAST`, `ALTER DOMAIN`, `ALTER COLUMN … SET DATA TYPE` / SET|DROP DEFAULT|NOT NULL, `GRANT`/`REVOKE`, `CREATE`/`DROP FUNCTION`/`TRIGGER`, `COMMENT ON`, `CREATE TEMPORARY TABLE` (+ `ON COMMIT`), view `WITH [CASCADED|LOCAL] CHECK OPTION`, `LIKE ESCAPE`, `ORDER BY NULLS`, DEFERRABLE constraints, `CREATE TABLE AS`, broader transaction stmts, and insert/trigger/lock dialect emit hooks.
+
 ### Recently covered Foundation gaps
 
-Assertions, `CREATE TABLE (LIKE …)`, generated columns (`:generated` / `:as` / `:stored`), aggregate `FILTER` / `WITHIN GROUP`, named `WINDOW` + `OVER name`, `TABLESAMPLE`, `LOCK TABLE`, `SET TRANSACTION`, `CREATE/DROP COLLATION` (+ character-set stub), `FOR SHARE` / `FOR NO KEY UPDATE` / `FOR KEY SHARE` (base dialect emits; ANSI rejects non-`FOR UPDATE`).
+Assertions, `CREATE TABLE (LIKE …)`, generated columns (`:generated` / `:as` / `:stored`), aggregate `FILTER` / `WITHIN GROUP`, named `WINDOW` + `OVER name`, `TABLESAMPLE`, `LOCK TABLE`, `SET`/`START TRANSACTION` (+ savepoints), `CREATE/DROP COLLATION` (+ character-set stub), `FOR SHARE` / `FOR NO KEY UPDATE` / `FOR KEY SHARE` (base dialect emits; ANSI rejects non-`FOR UPDATE`).
 
-Still out of scope (unless trivial later): embedded SQL, FDW, RLS, `VACUUM`/`EXPLAIN` and other admin/utility statements. Sibling workstreams may still land GRANT/REVOKE, CAST DDL, ALTER DOMAIN/COLUMN, FUNCTION/TRIGGER/COMMENT, TEMP/CHECK OPTION, LIKE ESCAPE, NULLS FIRST/LAST, DEFERRABLE constraints, CREATE TABLE AS, and broader transaction stmts on parallel branches.
+Still missing vs Foundation (later): partitions / complex vendor ALTER; richer SQL/PSM handlers. Still out of scope (unless trivial later): embedded SQL, FDW, RLS, `VACUUM`/`EXPLAIN` and other admin/utility statements.
 
 ## Core surface (wave-1)
 
-`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · arithmetic · `for-update` · DDL (incl. type/domain + typed tables) · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
+`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · `sql-like` (`:escape` / `:not`) · `order-by` NULLS FIRST/LAST · arithmetic · `for-update` · DDL (incl. type/domain + typed tables + `create-table-as` + DEFERRABLE constraints) · `start-transaction` / `set-transaction` / commit/rollback/savepoint · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
 
 SxQL is **not** the public API.
 
@@ -131,6 +136,7 @@ First-party Rove suites (not vendored NIST/sqltest/slt):
 - `tests/sql-query-test.lisp` — Core DSL smoke
 - `tests/extension-registry-test.lisp` — type/op registry
 - `tests/dialect-extension-test.lisp` — open AST hooks (`sql-extension`, emit generics)
+- `tests/ddl-foundation-test.lisp` — GRANT/CAST/ALTER DOMAIN|COLUMN/FUNCTION/TRIGGER/COMMENT/TEMP/CHECK OPTION
 - `tests/procedure-test.lisp` — ANSI SQL/PSM procedural
 
 Dialect backend tests live in `sql-query-sqlite3` / `sql-query-postgres`.

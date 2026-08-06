@@ -66,6 +66,7 @@ Core never typecases on extension classes — dispatch is open via CLOS."))
 (defclass like-op (sql-expr)
   ((left :initarg :left :reader like-op-left)
    (pattern :initarg :pattern :reader like-op-pattern)
+   (escape :initarg :escape :reader like-op-escape :initform nil)
    (not-p :initarg :not-p :reader like-op-not-p :initform nil)))
 
 (defclass is-null-op (sql-expr)
@@ -408,7 +409,11 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 (defclass default-values-clause (sql-clause) ())
 
 (defclass table-constraint (sql-node)
-  ((name :initarg :name :reader table-constraint-name :initform nil)))
+  ((name :initarg :name :reader table-constraint-name :initform nil)
+   (deferrable :initarg :deferrable :reader table-constraint-deferrable :initform nil
+               :documentation "T = DEFERRABLE, :NOT = NOT DEFERRABLE, NIL = omit.")
+   (initially :initarg :initially :reader table-constraint-initially :initform nil
+              :documentation ":IMMEDIATE | :DEFERRED | NIL.")))
 
 (defclass primary-key-constraint (table-constraint)
   ((columns :initarg :columns :reader primary-key-columns)))
@@ -436,8 +441,18 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (extras :initarg :extras :reader create-table-extras :initform nil
            :documentation "Open list of sql-node extensions (WITH clauses, vendor options, …).")
    (temporary :initarg :temporary :reader create-table-temporary :initform nil
-              :documentation "CREATE TEMPORARY TABLE (also used by CREATE TABLE LIKE).")
+              :documentation "Non-NIL → CREATE TEMPORARY TABLE.")
+   (on-commit :initarg :on-commit :reader create-table-on-commit :initform nil
+              :documentation ":preserve | :delete — ON COMMIT … ROWS (temporary tables).")
    (if-not-exists :initarg :if-not-exists :reader create-table-if-not-exists :initform nil)))
+
+(defclass create-table-as-statement (sql-statement)
+  ((table :initarg :table :reader create-table-as-table)
+   (query :initarg :query :reader create-table-as-query)
+   (temporary :initarg :temporary :reader create-table-as-temporary :initform nil)
+   (if-not-exists :initarg :if-not-exists :reader create-table-as-if-not-exists :initform nil)
+   (columns :initarg :columns :reader create-table-as-columns :initform nil
+            :documentation "Optional column name list for CREATE TABLE name (cols) AS ….")))
 
 (defclass add-constraint-clause (sql-clause)
   ((constraint :initarg :constraint :reader add-constraint-constraint)))
@@ -457,7 +472,11 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (columns :initarg :columns :reader create-view-columns :initform nil)
    (query :initarg :query :reader create-view-query)
    (or-replace :initarg :or-replace :reader create-view-or-replace :initform nil)
-   (recursive :initarg :recursive :reader create-view-recursive :initform nil)))
+   (recursive :initarg :recursive :reader create-view-recursive :initform nil)
+   (temporary :initarg :temporary :reader create-view-temporary :initform nil
+              :documentation "Non-NIL → CREATE TEMPORARY VIEW.")
+   (check-option :initarg :check-option :reader create-view-check-option :initform nil
+                 :documentation "T | :cascaded | :local — WITH [CASCADED|LOCAL] CHECK OPTION.")))
 
 (defclass drop-view-statement (sql-statement)
   ((name :initarg :name :reader drop-view-name)
@@ -673,11 +692,38 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
 
 (defclass comment-on-statement (sql-statement)
   ((kind :initarg :kind :reader comment-on-kind
-         :documentation ":table | :column | :type | :domain | :schema | :index | :sequence | :function | :trigger")
+         :documentation ":table | :column | :type | :domain | :schema | :index | :sequence | :function | :trigger | :view")
    (name :initarg :name :reader comment-on-name
          :documentation "Object name, or (table column) for :column.")
    (comment :initarg :comment :reader comment-on-comment)))
 
+;;; Transaction control (ANSI)
+
+(defclass transaction-characteristics-mixin ()
+  ((isolation :initarg :isolation :reader transaction-isolation :initform nil
+              :documentation ":read-uncommitted | :read-committed | :repeatable-read | :serializable")
+   (access-mode :initarg :access-mode :reader transaction-access-mode :initform nil
+                :documentation ":read-only | :read-write")
+   (deferrable :initarg :deferrable :reader transaction-deferrable :initform nil
+               :documentation "T | NIL | :not — DEFERRABLE / NOT DEFERRABLE.")))
+
+(defclass start-transaction-statement (transaction-characteristics-mixin sql-statement)
+  ())
+
+(defclass set-transaction-statement (transaction-characteristics-mixin sql-statement)
+  ())
+
+(defclass commit-statement (sql-statement) ())
+
+(defclass rollback-statement (sql-statement)
+  ((savepoint :initarg :savepoint :reader rollback-savepoint :initform nil
+              :documentation "When set, emit ROLLBACK TO SAVEPOINT name.")))
+
+(defclass savepoint-statement (sql-statement)
+  ((name :initarg :name :reader savepoint-name)))
+
+(defclass release-savepoint-statement (sql-statement)
+  ((name :initarg :name :reader release-savepoint-name)))
 ;;; ---- Remaining ANSI/Foundation gaps ----
 
 (defclass create-assertion-statement (sql-statement)
@@ -700,15 +746,6 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (wait :initarg :wait :reader lock-table-wait :initform nil
          :documentation "Optional wait seconds (vendor); NIL = default."))
   (:documentation "LOCK TABLE … IN … MODE."))
-
-(defclass set-transaction-statement (sql-statement)
-  ((isolation :initarg :isolation :reader set-transaction-isolation :initform nil
-              :documentation ":read-uncommitted | :read-committed | :repeatable-read | :serializable")
-   (access-mode :initarg :access-mode :reader set-transaction-access-mode :initform nil
-                :documentation ":read-only | :read-write")
-   (deferrable :initarg :deferrable :reader set-transaction-deferrable :initform nil
-               :documentation "T | NIL | :not — DEFERRABLE / NOT DEFERRABLE."))
-  (:documentation "SET TRANSACTION [isolation] [access mode] [DEFERRABLE]. Complements START TRANSACTION."))
 
 (defclass create-collation-statement (sql-statement)
   ((name :initarg :name :reader create-collation-name)
