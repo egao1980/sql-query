@@ -29,6 +29,7 @@
                (:file "ansi-compliance")
                (:file "extension-registry-test")
                (:file "dialect-extension-test")
+               (:file "ansi-gap-rest-test")
                (:file "procedure-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)

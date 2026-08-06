@@ -46,6 +46,7 @@
    #:intersect #:intersect-all
    #:except #:except-all
    #:create-table
+   #:create-table-like #:table-like
    #:drop-table
    #:alter-table
    #:create-index
@@ -57,17 +58,23 @@
    #:alter-type
    #:create-domain
    #:drop-domain
+   #:create-assertion #:drop-assertion
+   #:lock-table
+   #:set-transaction
+   #:create-collation #:drop-collation
+   #:create-character-set #:drop-character-set
 
    ;; clauses
    #:columns
    #:from
+   #:tablesample
    #:where
    #:join #:left-join #:inner-join #:right-join #:full-join #:cross-join
    #:natural-join #:natural-left-join #:natural-right-join #:natural-full-join
    #:on #:using
    #:group-by #:having #:order-by
    #:limit #:offset
-   #:distinct #:for-update
+   #:distinct #:for-update #:for-share #:for-no-key-update #:for-key-share
    #:cte #:with-cte
    #:sql-values #:default-values #:values-row
    #:sql-set #:returning
@@ -102,7 +109,7 @@
    #:create-type-name #:create-type-kind #:create-type-base-type
    #:create-type-attributes #:create-type-enum-labels #:create-type-if-not-exists
    #:create-type-base-options
-   #:create-table-of-type #:create-table-extras
+   #:create-table-of-type #:create-table-extras #:create-table-temporary
    #:drop-type-name #:alter-type-name #:alter-type-actions
    #:create-domain-name #:create-domain-base-type
    #:drop-domain-name
@@ -122,10 +129,11 @@
    #:exists #:subquery #:lateral
    #:label #:bindparam #:sql-raw #:typed #:typed-value
    #:function-call #:function-call-name #:function-call-args
+   #:function-call-filter #:function-call-within-group
    #:bind-param #:bind-param-name #:bind-param-value #:bind-param-default
    #:bind-param-sql-type #:bind-param-has-value #:bind-param-has-default
    #:bind-param-effective-value
-   #:over #:rows-frame #:range-frame
+   #:over #:window #:rows-frame #:range-frame
    #:rollup #:cube #:grouping-sets
    #:col #:lit #:ensure-expr #:parse-expr #:as-cte
 
@@ -147,6 +155,7 @@
    #:emit-context #:emit-context-params #:emit-context-dialect
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list
+   #:emit-tablesample #:emit-table-like #:emit-lock-table #:emit-set-transaction
    ;; open dialect extension emit hooks
    #:emit-extension
    #:emit-alter-table-action
@@ -171,7 +180,8 @@
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique
-   #:column-def-default
+   #:column-def-default #:column-def-generated #:column-def-generated-as
+   #:column-def-stored
    #:create-procedure-name #:create-procedure-params #:create-procedure-body
    #:create-procedure-language #:create-procedure-or-replace
    #:procedure-param-name #:procedure-param-type #:procedure-param-mode
@@ -180,6 +190,7 @@
    #:column-ref #:column-ref-name #:column-ref-table
    #:limit-count #:offset-count #:distinct-on
    #:for-update-of #:for-update-nowait #:for-update-skip-locked
+   #:for-update-strength
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 

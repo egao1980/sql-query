@@ -160,13 +160,42 @@ Use BINDPARAM when you need a placeholder."
   (make-instance 'cast-expr :expr (ensure-expr expr) :type type))
 
 (defun sql-func (name &rest args)
-  (make-instance 'function-call
-                 :name name
-                 :args (mapcar (lambda (a)
-                                 (if (eq a :*)
-                                     (sql-raw "*")
-                                     (ensure-expr a)))
-                               args)))
+  "Function / aggregate call. Trailing keywords:
+  :FILTER expr — FILTER (WHERE …)
+  :WITHIN-GROUP order-items — WITHIN GROUP (ORDER BY …); order-items is a list
+  like ORDER-BY accepts, or an order-by-clause."
+  (let ((filter nil)
+        (within-group nil)
+        (positional nil)
+        (rest args))
+    (loop while rest
+          do (let ((a (pop rest)))
+               (cond
+                 ((eq a :filter)
+                  (setf filter (ensure-expr (pop rest))))
+                 ((eq a :within-group)
+                  (let ((og (pop rest)))
+                    (setf within-group
+                          (cond
+                            ((typep og 'order-by-clause) (order-by-items og))
+                            ((and (listp og) (not (typep og 'sql-node)))
+                             (mapcar (lambda (i)
+                                       (if (and (consp i) (not (typep i 'sql-node)))
+                                           (list (ensure-expr (first i))
+                                                 (or (second i) :asc))
+                                           (list (ensure-expr i) :asc)))
+                                     og))
+                            (t (list (list (ensure-expr og) :asc)))))))
+                 (t (push a positional)))))
+    (make-instance 'function-call
+                   :name name
+                   :args (mapcar (lambda (a)
+                                   (if (eq a :*)
+                                       (sql-raw "*")
+                                       (ensure-expr a)))
+                                 (nreverse positional))
+                   :filter filter
+                   :within-group within-group)))
 
 (defun array-lit (&rest items)
   "ARRAY[e1, e2, …] literal (postgres / dialects that support array constructors)."
@@ -239,8 +268,37 @@ the driver when :value is absent. :type encodes that payload."
                                   (if (typep i 'sql-node) i (ensure-expr i)))
                                 items)))
 
-(defun from (table &optional alias)
-  (make-instance 'from-clause :table table :alias alias))
+(defun from (table &rest args)
+  "FROM table [alias] [:TABLESAMPLE tablesample-spec].
+  (from :t)
+  (from :t \"u\")
+  (from :t :tablesample (tablesample :bernoulli 10 :repeatable 42))
+  (from :t \"u\" :tablesample (tablesample :system 5))"
+  (let ((alias nil)
+        (ts nil)
+        (rest args))
+    (loop while rest
+          do (let ((a (pop rest)))
+               (cond
+                 ((eq a :tablesample) (setf ts (pop rest)))
+                 ((eq a :alias) (setf alias (pop rest)))
+                 ((and (null alias)
+                       (or (stringp a) (keywordp a) (symbolp a))
+                       (not (typep a 'sql-node)))
+                  (setf alias a))
+                 (t (%err "from: unexpected ~s" a)))))
+    (when (and ts (not (typep ts 'tablesample-spec)))
+      (%err "from :tablesample expects tablesample-spec, got ~s" ts))
+    (make-instance 'from-clause :table table :alias alias :tablesample ts)))
+
+(defun tablesample (method percent &key repeatable)
+  "TABLESAMPLE BERNOULLI|SYSTEM (percent) [REPEATABLE (seed)]."
+  (unless (member method '(:bernoulli :system) :test #'eq)
+    (%err "tablesample method expects :bernoulli or :system, got ~s" method))
+  (make-instance 'tablesample-spec
+                 :method method
+                 :percent percent
+                 :repeatable repeatable))
 
 (defun where (expr)
   (make-instance 'where-clause :expr (ensure-expr expr)))
@@ -252,18 +310,26 @@ the driver when :value is absent. :type encodes that payload."
   (let ((alias nil)
         (on-expr nil)
         (using-cols nil)
-        (natural nil))
-    (loop for x in rest
-          do (cond
-               ((eq x :natural) (setf natural t))
-               ((typep x 'on-clause) (setf on-expr (on-expr x)))
-               ((typep x 'using-clause) (setf using-cols (using-columns x)))
-               ((and (symbolp x) (not (typep x 'sql-node)) (not (keywordp x)))
-                (setf alias x))
-               ((keywordp x) (setf alias x))
-               (t (setf on-expr (ensure-expr x)))))
+        (natural nil)
+        (ts nil)
+        (pending rest))
+    (loop while pending
+          do (let ((x (pop pending)))
+               (cond
+                 ((eq x :natural) (setf natural t))
+                 ((eq x :tablesample) (setf ts (pop pending)))
+                 ((typep x 'on-clause) (setf on-expr (on-expr x)))
+                 ((typep x 'using-clause) (setf using-cols (using-columns x)))
+                 ((typep x 'tablesample-spec) (setf ts x))
+                 ((and (symbolp x) (not (typep x 'sql-node)) (not (keywordp x)))
+                  (setf alias x))
+                 ((keywordp x) (setf alias x))
+                 (t (setf on-expr (ensure-expr x))))))
+    (when (and ts (not (typep ts 'tablesample-spec)))
+      (%err "join :tablesample expects tablesample-spec, got ~s" ts))
     (make-instance 'join-clause :type type :table table :alias alias
-                               :on on-expr :using using-cols :natural natural)))
+                               :on on-expr :using using-cols :natural natural
+                               :tablesample ts)))
 
 (defun using (&rest columns)
   (make-instance 'using-clause :columns (mapcar #'ensure-expr columns)))
@@ -301,11 +367,23 @@ the driver when :value is absent. :type encodes that payload."
 (defun distinct (&rest on-exprs)
   (make-instance 'distinct-clause :on (mapcar #'ensure-expr on-exprs)))
 
-(defun for-update (&key of nowait skip-locked)
+(defun for-update (&key of nowait skip-locked (strength :update))
+  "Row lock clause. STRENGTH is :update (default), :share, :key-share, or :no-key-update."
   (make-instance 'for-update-clause
+                 :strength strength
                  :of (when of (mapcar #'ensure-expr (if (listp of) of (list of))))
                  :nowait nowait
                  :skip-locked skip-locked))
+
+(defun for-share (&key of nowait skip-locked)
+  "FOR SHARE — shorthand for (for-update :strength :share …)."
+  (for-update :of of :nowait nowait :skip-locked skip-locked :strength :share))
+
+(defun for-no-key-update (&key of nowait skip-locked)
+  (for-update :of of :nowait nowait :skip-locked skip-locked :strength :no-key-update))
+
+(defun for-key-share (&key of nowait skip-locked)
+  (for-update :of of :nowait nowait :skip-locked skip-locked :strength :key-share))
 
 (defun cte (name query &key recursive)
   (as-cte query name :recursive recursive))
@@ -366,7 +444,14 @@ the driver when :value is absent. :type encodes that payload."
   (make-instance 'returning-clause
                  :items (mapcar #'ensure-expr items)))
 
-(defun column (name &key type primary-key autoincrement not-null unique default)
+(defun column (name &key type primary-key autoincrement not-null unique default
+                      generated as stored)
+  "Column definition. Generated columns:
+  (column :total :type :integer :generated :always :as (:+ :a :b) :stored t)"
+  (when (and generated (null as))
+    (%err "column :generated requires :as expression"))
+  (when (and as (null generated))
+    (setf generated :always))
   (make-instance 'column-def
                  :name name
                  :type type
@@ -374,13 +459,18 @@ the driver when :value is absent. :type encodes that payload."
                  :autoincrement autoincrement
                  :not-null not-null
                  :unique unique
-                 :default default))
+                 :default default
+                 :generated generated
+                 :generated-as (when as (ensure-expr as))
+                 :stored stored))
 
-(defun add-column (name &key type primary-key autoincrement not-null unique default)
+(defun add-column (name &key type primary-key autoincrement not-null unique default
+                          generated as stored)
   (make-instance 'add-column-clause
                  :column (column name :type type :primary-key primary-key
                                  :autoincrement autoincrement :not-null not-null
-                                 :unique unique :default default)))
+                                 :unique unique :default default
+                                 :generated generated :as as :stored stored)))
 
 (defun drop-column (name)
   (make-instance 'drop-column-clause :name name))
@@ -448,10 +538,13 @@ the driver when :value is absent. :type encodes that payload."
 (defun create-table (table &rest args)
   "CREATE TABLE.
 
-  Keywords: :IF-NOT-EXISTS, :OF type (typed table), :EXTRAS (list of extension nodes).
-  Also accepts COLUMN-DEF, TABLE-CONSTRAINT, and any SQL-NODE as an open extension
-  (stored in CREATE-TABLE-EXTRAS — dialects emit via EMIT-CREATE-TABLE-EXTRA)."
+  Keywords: :IF-NOT-EXISTS, :TEMPORARY, :OF type (typed table),
+  :EXTRAS (list of extension nodes).
+  Also accepts COLUMN-DEF, TABLE-CONSTRAINT, TABLE-LIKE-CLAUSE, and any SQL-NODE
+  as an open extension (stored in CREATE-TABLE-EXTRAS — dialects emit via
+  EMIT-CREATE-TABLE-EXTRA)."
   (let ((if-not-exists nil)
+        (temporary nil)
         (of-type nil)
         (cols nil)
         (constraints nil)
@@ -461,6 +554,7 @@ the driver when :value is absent. :type encodes that payload."
           do (let ((a (pop rest)))
                (cond
                  ((eq a :if-not-exists) (setf if-not-exists t))
+                 ((eq a :temporary) (setf temporary t))
                  ((eq a :of)
                   (setf of-type (pop rest))
                   (unless of-type (%err "create-table :of needs a type name")))
@@ -470,6 +564,7 @@ the driver when :value is absent. :type encodes that payload."
                  ((and (consp a) (eq (first a) :of))
                   (setf of-type (second a)))
                  ((typep a 'column-def) (push a cols))
+                 ((typep a 'table-like-clause) (push a cols))
                  ((typep a 'table-constraint) (push a constraints))
                  ((typep a 'sql-node) (push a extras))
                  (t (%err "create-table: unexpected ~s" a)))))
@@ -479,7 +574,30 @@ the driver when :value is absent. :type encodes that payload."
                    :constraints (nreverse constraints)
                    :of-type of-type
                    :extras (nreverse extras)
+                   :temporary temporary
                    :if-not-exists if-not-exists)))
+
+(defun table-like (source &key including excluding)
+  "LIKE other_table [INCLUDING …] [EXCLUDING …] element for CREATE TABLE."
+  (make-instance 'table-like-clause
+                 :source source
+                 :including (when including
+                              (mapcar (lambda (x)
+                                        (if (keywordp x) x
+                                            (intern (string-upcase (string x)) :keyword)))
+                                      (if (listp including) including (list including))))
+                 :excluding (when excluding
+                              (mapcar (lambda (x)
+                                        (if (keywordp x) x
+                                            (intern (string-upcase (string x)) :keyword)))
+                                      (if (listp excluding) excluding (list excluding))))))
+
+(defun create-table-like (name source &key including excluding temporary if-not-exists)
+  "CREATE TABLE name (LIKE source …). Convenience wrapper around CREATE-TABLE + TABLE-LIKE."
+  (apply #'create-table name
+         (append (when temporary (list :temporary))
+                 (when if-not-exists (list :if-not-exists))
+                 (list (table-like source :including including :excluding excluding)))))
 
 (defun drop-table (table &key if-exists)
   (make-instance 'drop-table-statement :table table :if-exists if-exists))
@@ -599,17 +717,36 @@ the driver when :value is absent. :type encodes that payload."
 (defun nullif (left right)
   (make-instance 'nullif-expr :left (ensure-expr left) :right (ensure-expr right)))
 
-(defun over (expr &key partition-by order-by frame)
-  (make-instance 'over-expr
-                 :expr (ensure-expr expr)
-                 :window (make-instance 'window-spec
-                                       :partition-by (mapcar #'ensure-expr (or partition-by nil))
-                                       :order-by (mapcar (lambda (i)
+(defun over (expr &key partition-by order-by frame window name)
+  "Window function application.
+  Inline:  (over (count :*) :partition-by '(:dept) :order-by '(:id))
+  Named:   (over (count :*) :window :w)  or  (over (count :*) :name :w)"
+  (let ((ref (or window name)))
+    (make-instance 'over-expr
+                   :expr (ensure-expr expr)
+                   :window (if ref
+                               ref
+                               (make-instance 'window-spec
+                                              :partition-by (mapcar #'ensure-expr (or partition-by nil))
+                                              :order-by (mapcar (lambda (i)
+                                                                  (if (and (consp i) (not (typep i 'sql-node)))
+                                                                      (list (ensure-expr (first i)) (or (second i) :asc))
+                                                                      (list (ensure-expr i) :asc)))
+                                                                (or order-by nil))
+                                              :frame frame)))))
+
+(defun window (name &key partition-by order-by frame)
+  "Named WINDOW clause: (window :w :partition-by '(:dept) :order-by '(:salary))."
+  (make-instance 'window-clause
+                 :name name
+                 :spec (make-instance 'window-spec
+                                      :partition-by (mapcar #'ensure-expr (or partition-by nil))
+                                      :order-by (mapcar (lambda (i)
                                                           (if (and (consp i) (not (typep i 'sql-node)))
                                                               (list (ensure-expr (first i)) (or (second i) :asc))
                                                               (list (ensure-expr i) :asc)))
                                                         (or order-by nil))
-                                       :frame frame)))
+                                      :frame frame)))
 
 (defun rows-frame (start &optional end)
   (make-instance 'window-frame :unit :rows :start start :end end))
@@ -819,6 +956,72 @@ the driver when :value is absent. :type encodes that payload."
 
 (defun drop-domain (name &key if-exists cascade)
   (make-instance 'drop-domain-statement
+                 :name name :if-exists if-exists :cascade cascade))
+
+(defun create-assertion (name check &key deferrable initially)
+  "CREATE ASSERTION name CHECK (…)."
+  (make-instance 'create-assertion-statement
+                 :name name
+                 :check (ensure-expr check)
+                 :deferrable deferrable
+                 :initially initially))
+
+(defun drop-assertion (name &key if-exists cascade)
+  (make-instance 'drop-assertion-statement
+                 :name name :if-exists if-exists :cascade cascade))
+
+(defun lock-table (tables &key (mode :share) nowait wait)
+  "LOCK TABLE … IN mode MODE [NOWAIT]."
+  (make-instance 'lock-table-statement
+                 :tables (if (listp tables) tables (list tables))
+                 :mode mode
+                 :nowait nowait
+                 :wait wait))
+
+(defun set-transaction (&key isolation access-mode deferrable)
+  "SET TRANSACTION [ISOLATION LEVEL …] [READ ONLY|READ WRITE] [DEFERRABLE]."
+  (unless (or isolation access-mode deferrable)
+    (%err "set-transaction requires at least one of :isolation :access-mode :deferrable"))
+  (when (and isolation
+             (not (member isolation '(:read-uncommitted :read-committed
+                                      :repeatable-read :serializable)
+                          :test #'eq)))
+    (%err "set-transaction :isolation bad value ~s" isolation))
+  (when (and access-mode
+             (not (member access-mode '(:read-only :read-write) :test #'eq)))
+    (%err "set-transaction :access-mode expects :read-only or :read-write, got ~s"
+          access-mode))
+  (make-instance 'set-transaction-statement
+                 :isolation isolation
+                 :access-mode access-mode
+                 :deferrable deferrable))
+
+(defun create-collation (name &key from locale lc-collate lc-ctype provider
+                                deterministic pad-space if-not-exists)
+  "CREATE COLLATION. Prefer :FROM existing, or :LOCALE / :LC-COLLATE vendor form."
+  (make-instance 'create-collation-statement
+                 :name name
+                 :from from
+                 :locale locale
+                 :lc-collate lc-collate
+                 :lc-ctype lc-ctype
+                 :provider provider
+                 :deterministic deterministic
+                 :pad-space pad-space
+                 :if-not-exists if-not-exists))
+
+(defun drop-collation (name &key if-exists cascade)
+  (make-instance 'drop-collation-statement
+                 :name name :if-exists if-exists :cascade cascade))
+
+(defun create-character-set (name &key from collate if-not-exists)
+  "CREATE CHARACTER SET (stub emit — rarely supported)."
+  (make-instance 'create-character-set-statement
+                 :name name :from from :collate collate
+                 :if-not-exists if-not-exists))
+
+(defun drop-character-set (name &key if-exists cascade)
+  (make-instance 'drop-character-set-statement
                  :name name :if-exists if-exists :cascade cascade))
 
 (defun lateral (query &optional alias)
