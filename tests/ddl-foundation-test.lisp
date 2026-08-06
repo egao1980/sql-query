@@ -93,13 +93,24 @@
                         :with-grant-option t)))
         (r (%sql (revoke t :on :users :from :alice :cascade t
                          :grant-option-for t)))
-        (schema (%sql (grant :usage :on :public :to :bob :on-kind :schema))))
+        (schema (%sql (grant :usage :on :public :to :bob :on-kind :schema)))
+        (pub (%sql (grant :select :on :t :to :public))))
     (%assert-contains g "GRANT" "SELECT, INSERT" "ON TABLE" "TO" "WITH GRANT OPTION")
-    (%assert-contains r "REVOKE" "GRANT OPTION FOR" "ALL" "FROM" "CASCADE")
-    (%assert-contains schema "GRANT" "USAGE" "ON SCHEMA")))
+    (%assert-contains r "REVOKE" "GRANT OPTION FOR" "ALL PRIVILEGES" "FROM" "CASCADE")
+    (%assert-contains schema "GRANT" "USAGE" "ON SCHEMA")
+    (%assert-contains pub "TO PUBLIC")
+    (%assert-absent pub "\"public\"")))
+
+(deftest ddl-create-cast-without-function-default
+  (%assert-contains (%sql (create-cast :integer :bigint :as :implicit))
+                    "CREATE CAST" "WITHOUT FUNCTION" "AS IMPLICIT")
+  (%assert-contains (%sql (create-cast :text :integer :with-inout t))
+                    "WITH INOUT"))
 
 (deftest ddl-comment-on
   (%assert-contains (%sql (comment-on :table :users "user accounts"))
                     "COMMENT ON TABLE" "IS" "user accounts")
   (%assert-contains (%sql (comment-on :column '(:users :email) "addr"))
-                    "COMMENT ON COLUMN" "." "IS"))
+                    "COMMENT ON COLUMN" "." "IS")
+  (%assert-contains (%sql (comment-on :view :v "a view"))
+                    "COMMENT ON VIEW"))

@@ -110,7 +110,9 @@ Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core
 
 Typed tables: `(create-table :people :of :person-t)`. Vendor trailing clauses go in `create-table-extras` / open `sql-node` args.
 
-Still missing vs Foundation (later): `CREATE CAST` / `DROP CAST` emit, `ALTER DOMAIN`, `ALTER COLUMN … SET DATA TYPE`, GRANT/REVOKE, triggers/functions (AST stubs may exist; constructors/emit incomplete).
+Still missing vs Foundation (later): partitions / complex vendor ALTER; richer SQL/PSM handlers.
+
+Also shipped: `CREATE CAST` / `DROP CAST`, `ALTER DOMAIN`, `ALTER COLUMN … SET DATA TYPE` / SET|DROP DEFAULT|NOT NULL, `GRANT`/`REVOKE`, `CREATE`/`DROP FUNCTION`/`TRIGGER`, `COMMENT ON`, `CREATE TEMPORARY TABLE` (+ `ON COMMIT`), view `WITH [CASCADED|LOCAL] CHECK OPTION`.
 
 ## Core surface (wave-1)
 
@@ -126,6 +128,7 @@ First-party Rove suites (not vendored NIST/sqltest/slt):
 - `tests/sql-query-test.lisp` — Core DSL smoke
 - `tests/extension-registry-test.lisp` — type/op registry
 - `tests/dialect-extension-test.lisp` — open AST hooks (`sql-extension`, emit generics)
+- `tests/ddl-foundation-test.lisp` — GRANT/CAST/ALTER DOMAIN|COLUMN/FUNCTION/TRIGGER/COMMENT/TEMP/CHECK OPTION
 - `tests/procedure-test.lisp` — ANSI SQL/PSM procedural
 
 Dialect backend tests live in `sql-query-sqlite3` / `sql-query-postgres`.
