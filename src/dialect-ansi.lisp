@@ -43,7 +43,6 @@ Vendor extensions live in sql-query-* backend systems."))
        ((:date) "DATE")
        ((:interval) "INTERVAL")
        ((:xml) "XML")
-       ((:boolean) "BOOLEAN")
        (otherwise (call-next-method))))
     ((and (consp type-spec) (eq (first type-spec) :varchar))
      (format nil "CHARACTER VARYING(~a)" (second type-spec)))
@@ -77,7 +76,7 @@ Vendor extensions live in sql-query-* backend systems."))
            :message "DISTINCT ON is not ANSI SQL — use sql-query-postgres"))
   (write-string "DISTINCT " stream))
 
-;;; FOR UPDATE without vendor lock wait clauses
+;;; FOR UPDATE without vendor lock wait / strength clauses
 
 (defmethod emit-for-update ((dialect ansi-dialect) clause stream ctx)
   (when (or (for-update-nowait clause) (for-update-skip-locked clause))
@@ -85,12 +84,12 @@ Vendor extensions live in sql-query-* backend systems."))
            :feature :for-update-wait
            :dialect dialect
            :message "NOWAIT/SKIP LOCKED are not ANSI SQL"))
-  (when (and (for-update-strength clause)
-             (not (eq (for-update-strength clause) :update)))
-    (error 'sql-dialect-unsupported
-           :feature :for-update-strength
-           :dialect dialect
-           :message "FOR SHARE / NO KEY UPDATE / KEY SHARE are not ANSI SQL"))
+  (let ((strength (or (for-update-strength clause) :update)))
+    (unless (eq strength :update)
+      (error 'sql-dialect-unsupported
+             :feature :for-update-strength
+             :dialect dialect
+             :message "FOR SHARE / FOR KEY SHARE / FOR NO KEY UPDATE are not ANSI SQL")))
   (write-string " FOR UPDATE" stream)
   (when (for-update-of clause)
     (write-string " OF " stream)

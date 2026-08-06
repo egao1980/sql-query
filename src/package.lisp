@@ -66,6 +66,7 @@
    #:start-transaction #:set-transaction
    #:sql-commit #:sql-rollback
    #:sql-savepoint #:sql-release-savepoint
+   #:create-table-like #:table-like
    #:drop-table
    #:alter-table
    #:create-index
@@ -85,17 +86,22 @@
    #:create-trigger #:drop-trigger
    #:grant #:revoke
    #:comment-on
+   #:create-assertion #:drop-assertion
+   #:lock-table
+   #:create-collation #:drop-collation
+   #:create-character-set #:drop-character-set
 
    ;; clauses
    #:columns
    #:from
+   #:tablesample
    #:where
    #:join #:left-join #:inner-join #:right-join #:full-join #:cross-join
    #:natural-join #:natural-left-join #:natural-right-join #:natural-full-join
    #:on #:using
    #:group-by #:having #:order-by
    #:limit #:offset
-   #:distinct #:for-update #:for-share
+   #:distinct #:for-update #:for-share #:for-no-key-update #:for-key-share
    #:cte #:with-cte
    #:sql-values #:default-values #:values-row
    #:sql-set #:returning
@@ -158,10 +164,11 @@
    #:exists #:subquery #:lateral
    #:label #:bindparam #:sql-raw #:typed #:typed-value
    #:function-call #:function-call-name #:function-call-args
+   #:function-call-filter #:function-call-within-group
    #:bind-param #:bind-param-name #:bind-param-value #:bind-param-default
    #:bind-param-sql-type #:bind-param-has-value #:bind-param-has-default
    #:bind-param-effective-value
-   #:over #:rows-frame #:range-frame
+   #:over #:window #:rows-frame #:range-frame
    #:rollup #:cube #:grouping-sets
    #:col #:lit #:ensure-expr #:parse-expr #:as-cte
 
@@ -184,6 +191,7 @@
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-insert-prefix #:emit-insert-extras #:emit-trigger-execute
    #:emit-join #:emit-column-list
+   #:emit-tablesample #:emit-table-like #:emit-lock-table #:emit-set-transaction
    ;; open dialect extension emit hooks
    #:emit-extension
    #:emit-alter-table-action
@@ -209,7 +217,8 @@
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique
-   #:column-def-default
+   #:column-def-default #:column-def-generated #:column-def-generated-as
+   #:column-def-stored
    #:create-procedure-name #:create-procedure-params #:create-procedure-body
    #:create-procedure-language #:create-procedure-or-replace
    #:procedure-param-name #:procedure-param-type #:procedure-param-mode
@@ -223,7 +232,6 @@
    #:create-trigger-table #:create-trigger-for-each #:create-trigger-condition
    #:create-trigger-function #:create-trigger-function-args #:create-trigger-body
    #:drop-trigger-name #:drop-trigger-table #:drop-trigger-if-exists #:drop-trigger-cascade
-   #:create-trigger-statement #:drop-trigger-statement
 
    #:compile-sql #:execute-query #:fetch-query #:fetch-all-query))
 
