@@ -1,7 +1,8 @@
 # sql-query
 
-Composable **CLOS** SQL DSL for [cl-stack](https://github.com/egao1980/cl-stack) — **SQLAlchemy Core**–shaped expression language.
+Composable **CLOS** SQL DSL for [cl-stack](https://github.com/egao1980/cl-stack) — **SQLAlchemy Core** feature checklist (APIs stay Lisp).
 
+**Version:** `0.2.0` (OCI publish pending GitHub Actions minutes).  
 Nick: **`stack-sql-query`**. Brief: [sql.md](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/sql.md).
 
 | Project | Role |
@@ -113,17 +114,15 @@ Vendor seeds live in the dialect backend repos (jsonb, JSON1, arrays, …). Core
 
 Typed tables: `(create-table :people :of :person-t)`. Vendor trailing clauses go in `create-table-extras` / open `sql-node` args.
 
-Also shipped: `CREATE CAST` / `DROP CAST`, `ALTER DOMAIN`, `ALTER COLUMN … SET DATA TYPE` / SET|DROP DEFAULT|NOT NULL, `GRANT`/`REVOKE`, `CREATE`/`DROP FUNCTION`/`TRIGGER`, `COMMENT ON`, `CREATE TEMPORARY TABLE` (+ `ON COMMIT`), view `WITH [CASCADED|LOCAL] CHECK OPTION`, `LIKE ESCAPE`, `ORDER BY NULLS`, DEFERRABLE constraints, `CREATE TABLE AS`, broader transaction stmts, and insert/trigger/lock dialect emit hooks.
+Foundation DDL also includes: cast, alter domain/column, grant/revoke, function/trigger, comment-on, TEMP + `ON COMMIT`, view `CHECK OPTION`, assertions, `CREATE TABLE LIKE`, generated columns, CTAS, collation/character-set stubs, txn stmts (`start`/`set-transaction`/commit/rollback/savepoint), `LOCK TABLE`, `FILTER`/`WITHIN GROUP`, named `WINDOW`, `TABLESAMPLE`, FOR SHARE family.
 
-### Recently covered Foundation gaps
+**Vendor backends** own partitions / matviews / COPY / `ON CONFLICT` (postgres) and `INSERT OR` / `ON CONFLICT` (sqlite3) — not core “still missing”.
 
-Assertions, `CREATE TABLE (LIKE …)`, generated columns (`:generated` / `:as` / `:stored`), aggregate `FILTER` / `WITHIN GROUP`, named `WINDOW` + `OVER name`, `TABLESAMPLE`, `LOCK TABLE`, `SET`/`START TRANSACTION` (+ savepoints), `CREATE/DROP COLLATION` (+ character-set stub), `FOR SHARE` / `FOR NO KEY UPDATE` / `FOR KEY SHARE` (base dialect emits; ANSI rejects non-`FOR UPDATE`).
+Out of scope: embedded/module SQL, FDW, RLS, `VACUUM`/`EXPLAIN`, rich SQL/PSM exception handlers.
 
-Still missing vs Foundation (later): partitions / complex vendor ALTER; richer SQL/PSM handlers. Still out of scope (unless trivial later): embedded SQL, FDW, RLS, `VACUUM`/`EXPLAIN` and other admin/utility statements.
+## Core surface (0.2.0)
 
-## Core surface (wave-1)
-
-`select` / `insert-into` / `update` / `delete-from` · joins · `distinct` · `cte`/`with-cte` · `union*`/`intersect*`/`except*` · `exists`/`subquery` · `sql-case` · `sql-cast` · `sql-func`/`count` · `bindparam` · `label` · `sql-between` · `sql-like` (`:escape` / `:not`) · `order-by` NULLS FIRST/LAST · arithmetic · `for-update` · DDL (incl. type/domain + typed tables + `create-table-as` + DEFERRABLE constraints) · `start-transaction` / `set-transaction` / commit/rollback/savepoint · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
+`select` / `insert-into` / `update` / `delete-from` / `merge` / `truncate` · joins · `distinct` · CTE · set ops · window / FILTER / WITHIN GROUP · `sql-case` / `sql-cast` / `sql-func` · `bindparam` · `sql-like` (`:escape`) · NULLS FIRST/LAST · `for-update` / `for-share` · DDL (types/domains/cast/grant/trigger/function/assertion/CTAS/LIKE/TEMP/…) · txn stmts · open dialect AST extensions · `sql-fragment` · `make-sql-table` / `create-table-from`.
 
 SxQL is **not** the public API.
 
@@ -133,6 +132,7 @@ First-party Rove suites (not vendored NIST/sqltest/slt):
 
 - `tests/ansi-compliance.lisp` — ANSI emit coverage
 - `tests/ansi-gap-rest-test.lisp` — assertions, LIKE table, generated cols, FILTER/WITHIN GROUP, WINDOW, TABLESAMPLE, LOCK/SET TRANSACTION, collation, lock strengths
+- `tests/expr-txn-gap-test.lisp` — LIKE ESCAPE, NULLS, DEFERRABLE, CTAS, txn stmts
 - `tests/sql-query-test.lisp` — Core DSL smoke
 - `tests/extension-registry-test.lisp` — type/op registry
 - `tests/dialect-extension-test.lisp` — open AST hooks (`sql-extension`, emit generics)
