@@ -36,6 +36,16 @@
    #:alter-type-statement
    #:create-domain-statement
    #:drop-domain-statement
+   #:alter-domain-statement
+   #:create-cast-statement
+   #:drop-cast-statement
+   #:create-function-statement
+   #:drop-function-statement
+   #:create-trigger-statement
+   #:drop-trigger-statement
+   #:grant-statement
+   #:revoke-statement
+   #:comment-on-statement
 
    ;; statement constructors (SQLAlchemy Core–shaped)
    #:select
@@ -57,6 +67,14 @@
    #:alter-type
    #:create-domain
    #:drop-domain
+   #:alter-domain
+   #:set-default #:drop-default #:set-not-null #:drop-not-null #:set-data-type
+   #:alter-column
+   #:create-cast #:drop-cast
+   #:create-function #:drop-function
+   #:create-trigger #:drop-trigger
+   #:grant #:revoke
+   #:comment-on
 
    ;; clauses
    #:columns
@@ -106,6 +124,9 @@
    #:drop-type-name #:alter-type-name #:alter-type-actions
    #:create-domain-name #:create-domain-base-type
    #:drop-domain-name
+   #:alter-domain-name #:alter-domain-actions
+   #:create-table-temporary #:create-table-on-commit
+   #:create-view-temporary #:create-view-check-option
 
    ;; expressions
    #:|=| #:|!=| #:|:<| #:|:>| #:|:<=| #:|:>=|
@@ -153,6 +174,7 @@
    #:emit-create-table-extra
    #:emit-create-type #:emit-create-type-kind
    #:emit-alter-type-action
+   #:emit-alter-domain-action
 
    ;; extension registries (types / ops / funcs / AST)
    #:sql-type-def #:sql-op-def #:sql-func-def

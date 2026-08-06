@@ -399,6 +399,10 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
             :documentation "Typed table: CREATE TABLE … OF udt_name (SQL Foundation).")
    (extras :initarg :extras :reader create-table-extras :initform nil
            :documentation "Open list of sql-node extensions (WITH clauses, vendor options, …).")
+   (temporary :initarg :temporary :reader create-table-temporary :initform nil
+              :documentation "Non-NIL → CREATE TEMPORARY TABLE.")
+   (on-commit :initarg :on-commit :reader create-table-on-commit :initform nil
+              :documentation ":preserve | :delete — ON COMMIT … ROWS (temporary tables).")
    (if-not-exists :initarg :if-not-exists :reader create-table-if-not-exists :initform nil)))
 
 (defclass add-constraint-clause (sql-clause)
@@ -419,7 +423,11 @@ params list for prepare/execute when VALUE is not set (not inlined into SQL)."))
    (columns :initarg :columns :reader create-view-columns :initform nil)
    (query :initarg :query :reader create-view-query)
    (or-replace :initarg :or-replace :reader create-view-or-replace :initform nil)
-   (recursive :initarg :recursive :reader create-view-recursive :initform nil)))
+   (recursive :initarg :recursive :reader create-view-recursive :initform nil)
+   (temporary :initarg :temporary :reader create-view-temporary :initform nil
+              :documentation "Non-NIL → CREATE TEMPORARY VIEW.")
+   (check-option :initarg :check-option :reader create-view-check-option :initform nil
+                 :documentation "T | :cascaded | :local — WITH [CASCADED|LOCAL] CHECK OPTION.")))
 
 (defclass drop-view-statement (sql-statement)
   ((name :initarg :name :reader drop-view-name)
