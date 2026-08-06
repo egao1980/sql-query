@@ -88,9 +88,11 @@
    #:is-distinct-from #:is-not-distinct-from
    #:sql-any #:sql-all #:sql-some #:unique
    #:sql-case #:sql-cast #:nullif #:collate
-   #:sql-func #:count #:coalesce
+   #:sql-func #:array-lit #:array-literal #:array-literal-items
+   #:count #:coalesce
    #:exists #:subquery #:lateral
    #:label #:bindparam #:sql-raw #:typed #:typed-value
+   #:function-call #:function-call-name #:function-call-args
    #:bind-param #:bind-param-name #:bind-param-value #:bind-param-default
    #:bind-param-sql-type #:bind-param-has-value #:bind-param-has-default
    #:bind-param-effective-value
@@ -117,13 +119,15 @@
    #:emit-limit-offset #:emit-returning #:emit-for-update #:emit-distinct
    #:emit-join #:emit-column-list
 
-   ;; extension registries (types own Lisp↔expression conversion)
-   #:sql-type-def #:sql-op-def
-   #:register-sql-type #:register-sql-op
-   #:find-sql-type #:find-sql-op #:find-sql-op-catalog
+   ;; extension registries (types / ops / funcs)
+   #:sql-type-def #:sql-op-def #:sql-func-def
+   #:register-sql-type #:register-sql-op #:register-sql-func
+   #:find-sql-type #:find-sql-op #:find-sql-func
+   #:find-sql-op-catalog #:find-sql-func-catalog
    #:sql-type-write #:sql-type-read #:encode-sql-value
    #:emit-typed-value #:registered-type-sql
-   #:*sql-op-catalog*
+   #:*sql-op-catalog* #:*sql-func-catalog*
+   #:sql-func-sql-name #:sql-func-emit-fn
 
    #:column-def-name #:column-def-type #:column-def-primary-key
    #:column-def-autoincrement #:column-def-not-null #:column-def-unique

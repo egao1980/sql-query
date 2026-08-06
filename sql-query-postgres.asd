@@ -7,4 +7,5 @@
   :serial t
   :pathname "src/backend-postgres"
   :components ((:file "package")
+               (:file "extensions")
                (:file "dialect")))

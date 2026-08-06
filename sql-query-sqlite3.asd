@@ -7,4 +7,5 @@
   :serial t
   :pathname "src/backend-sqlite3"
   :components ((:file "package")
+               (:file "extensions")
                (:file "dialect")))

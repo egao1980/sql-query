@@ -57,6 +57,16 @@ Custom SQL types own **Lisp ↔ expression** conversion — not only DDL names:
 
 **Literals vs params:** `lit` / bare values always emit SQL literal text (typed → encode then literal/`CAST`). Placeholders (`?` / `$n`) only from `bindparam` or `sql-fragment` `?` slots.
 
+**Vendor seeds** — `register-sql-type` / `register-sql-op` / `register-sql-func`:
+
+| | postgres | sqlite3 |
+|--|----------|---------|
+| types | jsonb/json/bson(bytea)/uuid/inet/timestamptz/arrays… | json/bson(blob)/uuid/datetime as TEXT/BLOB |
+| ops | `->` `->>` `#>` `@>` `\|\|` `~` `@@` `&&` … | `->` `->>` `\|\|` bitwise |
+| funcs | `date_trunc` `jsonb_set` `array_agg` `EXTRACT` `to_timestamp` … | `json_extract` `strftime` `unixepoch` `json_object` … |
+
+Helpers: `sql-query-postgres:jsonb-text`, `date-trunc`, `array-agg`, `now` · `sql-query-sqlite3:json-extract`, `strftime`, …. Override `:encode`/`:decode` for real JSON/BSON codecs. Core also has `array-lit`.
+
 ## Procedural SQL (two layers)
 
 **Layer 1** — SQL-shaped nodes (`proc-if`, `proc-setf`, `proc-while`, `proc-loop`, `proc-let`, …) map 1–2–1 onto SQL/PSM / plpgsql text via `emit-sql`.

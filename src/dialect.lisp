@@ -4,9 +4,11 @@
   ((type-registry :initform (make-hash-table :test #'eq)
                   :accessor dialect-type-registry)
    (op-registry :initform (make-hash-table :test #'eq)
-                :accessor dialect-op-registry))
+                :accessor dialect-op-registry)
+   (func-registry :initform (make-hash-table :test #'eq)
+                  :accessor dialect-func-registry))
   (:documentation "Dialect protocol. Builtin concrete class = ANSI; vendors in backend systems.
-TYPE-REGISTRY / OP-REGISTRY hold extension adapters (see register-sql-type / register-sql-op)."))
+TYPE/OP/FUNC registries hold extension adapters (register-sql-type/op/func)."))
 
 (defclass emit-context ()
   ((params :initform (make-array 0 :adjustable t :fill-pointer 0)
@@ -201,12 +203,32 @@ NIL → NULL, T → TRUE, :FALSE → FALSE, numbers/strings/chars as SQL literal
   (write-char #\) stream))
 
 (defmethod emit-sql (dialect (node function-call) stream ctx)
-  (write-string (ident-string (function-call-name node)) stream)
-  (write-char #\( stream)
-  (loop for (a . rest) on (function-call-args node)
+  (let* ((name (function-call-name node))
+         (key (cond ((keywordp name) name)
+                    ((symbolp name) (intern (symbol-name name) :keyword))
+                    (t nil)))
+         (def (and key (find-sql-func dialect key))))
+    (cond
+      ((and def (sql-func-emit-fn def))
+       (funcall (sql-func-emit-fn def) dialect node stream ctx))
+      (t
+       (write-string (if def
+                         (sql-func-sql-name def)
+                         (ident-string name))
+                     stream)
+       (write-char #\( stream)
+       (loop for (a . rest) on (function-call-args node)
+             do (emit-sql dialect a stream ctx)
+                (when rest (write-string ", " stream)))
+       (write-char #\) stream)))))
+
+(defmethod emit-sql (dialect (node array-literal) stream ctx)
+  "ANSI/PG-style ARRAY[…]. Dialects may specialize."
+  (write-string "ARRAY[" stream)
+  (loop for (a . rest) on (array-literal-items node)
         do (emit-sql dialect a stream ctx)
            (when rest (write-string ", " stream)))
-  (write-char #\) stream))
+  (write-char #\] stream))
 
 (defmethod emit-sql (dialect (node exists-op) stream ctx)
   (write-string "EXISTS (" stream)

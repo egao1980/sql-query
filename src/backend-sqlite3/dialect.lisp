@@ -75,6 +75,9 @@
          :dialect dialect
          :message "SQLite has no CALL"))
 
+(defmethod initialize-instance :after ((dialect sqlite3-dialect) &key)
+  (register-sqlite3-extensions dialect))
+
 (defun use-sqlite3-dialect ()
   "Register :sqlite3 dialect and set *SQL-DIALECT*. Returns the dialect."
   (let ((d (make-sqlite3-dialect)))

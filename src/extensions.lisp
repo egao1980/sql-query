@@ -33,8 +33,19 @@
    (parse :initarg :parse :initform nil :reader sql-op-parse-fn
           :documentation "(args) → sql-node")))
 
+(defclass sql-func-def ()
+  ((name :initarg :name :reader sql-func-name)
+   (sql-name :initarg :sql-name :reader sql-func-sql-name)
+   (arity :initarg :arity :initform nil :reader sql-func-arity
+          :documentation "Exact arg count, or NIL for any.")
+   (emit :initarg :emit :initform nil :reader sql-func-emit-fn
+         :documentation "(dialect node stream ctx) — full emit control")))
+
 (defvar *sql-op-catalog* (make-hash-table :test #'eq)
   "Global op name → sql-op-def (arity/parse) so parse-expr works before compile dialect is chosen.")
+
+(defvar *sql-func-catalog* (make-hash-table :test #'eq)
+  "Global func name → sql-func-def (sql-name) for helpers / docs.")
 
 (defun %type-key (type-spec)
   (cond
@@ -57,9 +68,16 @@
   "Return sql-op-def for NAME on DIALECT, or NIL."
   (gethash name (dialect-op-registry dialect)))
 
+(defun find-sql-func (dialect name)
+  "Return sql-func-def for NAME on DIALECT, or NIL."
+  (gethash name (dialect-func-registry dialect)))
+
 (defun find-sql-op-catalog (name)
   "Arity/parse catalog entry for NAME (dialect-agnostic)."
   (gethash name *sql-op-catalog*))
+
+(defun find-sql-func-catalog (name)
+  (gethash name *sql-func-catalog*))
 
 (defun register-sql-type (name target &key sql encode decode to-expr emit-value)
   "Register SQL type NAME on TARGET (dialect instance or driver keyword).
@@ -103,6 +121,25 @@ PARSE — (lambda (args) sql-node); else arity builds binary/unary/nary-op."
     (setf (gethash name (dialect-op-registry dialect)) def)
     ;; Catalog keeps last-registered arity/parse for parse-expr.
     (setf (gethash name *sql-op-catalog*) def)
+    def))
+
+(defun register-sql-func (name target &key sql arity emit)
+  "Register SQL function NAME on TARGET (dialect or driver keyword).
+
+SQL — emitted function name (default: downcased symbol with _ for -).
+ARITY — exact arg count or NIL.
+EMIT — (lambda (dialect node stream ctx)) optional full control."
+  (check-type name keyword)
+  (let* ((dialect (%resolve-dialect-target target))
+         (sql-name (or sql
+                       (substitute #\_ #\- (string-downcase (symbol-name name)))))
+         (def (make-instance 'sql-func-def
+                             :name name
+                             :sql-name sql-name
+                             :arity arity
+                             :emit emit)))
+    (setf (gethash name (dialect-func-registry dialect)) def)
+    (setf (gethash name *sql-func-catalog*) def)
     def))
 
 (defun %render-type-sql (dialect def type-spec)
