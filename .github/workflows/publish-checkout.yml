@@ -1,82 +1,45 @@
-name: Publish checkout to cl-systems
+name: Publish checkout
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "OCI tag for sql-query (default: .asd :version)"
+        description: "OCI tag for sql-query (empty → .asd :version)"
         required: false
         default: ""
+        type: string
       dialect_version:
-        description: "OCI tag for dialect backends (default: same as version / 0.2.0)"
+        description: "OCI tag for dialect backends (default 0.2.0)"
         required: false
         default: "0.2.0"
+        type: string
+      packager_version:
+        description: "Packager image version"
+        required: false
+        default: "0.16.0"
+        type: string
       publish_dialects:
         description: "Also publish sql-query-postgres / sql-query-sqlite3 (GHCR ACL still linked here post-split)"
         required: false
-        default: "true"
+        default: true
         type: boolean
-
-env:
-  PACKAGER_TAG: "0.12.0"
 
 jobs:
   publish-sql-query:
-    runs-on: ubuntu-latest
+    uses: egao1980/cl-repository/.github/workflows/publish-source.yml@main
+    with:
+      system: sql-query
+      version: ${{ inputs.version }}
+      packager-version: ${{ inputs.packager_version }}
     permissions:
       contents: read
       packages: write
-    steps:
-      - uses: actions/checkout@v5
 
-      - uses: oras-project/setup-oras@v2
-        with:
-          version: 1.2.3
-
-      - name: Install SBCL + git
-        run: sudo apt-get update && sudo apt-get install -y sbcl git
-
-      - name: Install Quicklisp
-        run: |
-          curl -fsSL -o /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
-          sbcl --noinform --non-interactive \
-            --load /tmp/quicklisp.lisp \
-            --eval '(quicklisp-quickstart:install :path #p"~/quicklisp/")'
-          sbcl --noinform --non-interactive \
-            --load ~/quicklisp/setup.lisp \
-            --eval '(ql-util:without-prompting (ql:add-to-init-file))'
-
-      - name: Pull packager
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "${GITHUB_TOKEN}" | oras login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          rm -rf /tmp/cl-repo-pull
-          mkdir -p /tmp/cl-repo-pull ~/.local/share/cl-systems
-          oras pull "ghcr.io/egao1980/cl-repository/cl-repository-packager:${PACKAGER_TAG}" -o /tmp/cl-repo-pull/
-          for f in /tmp/cl-repo-pull/*.tar.gz; do
-            tar -xzf "$f" -C ~/.local/share/cl-systems/
-          done
-
-      - name: Publish sql-query
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          PKG_SYSTEM: sql-query
-          PKG_VERSION: ${{ inputs.version }}
-        run: sbcl --noinform --non-interactive --load scripts/publish-checkout.lisp
-
-  # Dialect packages were first published from this repo (pre-split matrix).
-  # Their GHCR Actions ACL is still linked here — dialect-repo GITHUB_TOKEN gets 403.
-  # Long-term: Package settings → Manage Actions access → add dialect repos (Write),
-  # then publish from those repos and drop this job.
+  # Dialect GHCR ACL is still linked to this repo. Long-term: grant Write to
+  # the dialect repos and drop this job.
   publish-dialects:
     if: ${{ inputs.publish_dialects }}
     needs: publish-sql-query
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -85,46 +48,26 @@ jobs:
             repo: egao1980/sql-query-postgres
           - system: sql-query-sqlite3
             repo: egao1980/sql-query-sqlite3
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SBCL_VERSION: 2.6.7
+      ROSWELL_VERSION: "26.02.116"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
           repository: ${{ matrix.repo }}
-          path: dialect
-
-      - uses: oras-project/setup-oras@v2
+      - uses: egao1980/cl-repository/.github/actions/setup-client@main
+      - uses: egao1980/cl-repository/.github/actions/setup-roswell@main
         with:
-          version: 1.2.3
-
-      - name: Install SBCL + git
-        run: sudo apt-get update && sudo apt-get install -y sbcl git
-
-      - name: Install Quicklisp
-        run: |
-          curl -fsSL -o /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
-          sbcl --noinform --non-interactive \
-            --load /tmp/quicklisp.lisp \
-            --eval '(quicklisp-quickstart:install :path #p"~/quicklisp/")'
-          sbcl --noinform --non-interactive \
-            --load ~/quicklisp/setup.lisp \
-            --eval '(ql-util:without-prompting (ql:add-to-init-file))'
-
-      - name: Pull packager
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "${GITHUB_TOKEN}" | oras login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          rm -rf /tmp/cl-repo-pull
-          mkdir -p /tmp/cl-repo-pull ~/.local/share/cl-systems
-          oras pull "ghcr.io/egao1980/cl-repository/cl-repository-packager:${PACKAGER_TAG}" -o /tmp/cl-repo-pull/
-          for f in /tmp/cl-repo-pull/*.tar.gz; do
-            tar -xzf "$f" -C ~/.local/share/cl-systems/
-          done
-
-      - name: Publish ${{ matrix.system }}
-        working-directory: dialect
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          PKG_SYSTEM: ${{ matrix.system }}
-          PKG_VERSION: ${{ inputs.dialect_version }}
-        run: sbcl --noinform --non-interactive --load scripts/publish-checkout.lisp
+          sbcl-version: ${{ env.SBCL_VERSION }}
+          roswell-version: ${{ env.ROSWELL_VERSION }}
+      - uses: egao1980/cl-repository/.github/actions/ci@main
+        with:
+          phase: publish
+          system: ${{ matrix.system }}
+          version: ${{ inputs.dialect_version }}
+          packager-version: ${{ inputs.packager_version }}
