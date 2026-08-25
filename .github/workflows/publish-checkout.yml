@@ -35,8 +35,9 @@ jobs:
       contents: read
       packages: write
 
-  # Dialect GHCR ACL is still linked to this repo. Long-term: grant Write to
-  # the dialect repos and drop this job.
+  # Dialect GHCR ACL is still linked to this repo (owning-repo publish 403 as
+  # of 2026-08-25; Package Actions-access API is not grantable from here).
+  # Long-term: grant Write to the dialect repos and drop this job.
   publish-dialects:
     if: ${{ inputs.publish_dialects }}
     needs: publish-sql-query
