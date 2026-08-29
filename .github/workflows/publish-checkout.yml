@@ -50,6 +50,10 @@ jobs:
           - system: sql-query-sqlite3
             repo: egao1980/sql-query-sqlite3
     runs-on: ubuntu-latest
+    container: ghcr.io/egao1980/cl-repository/ci-base:latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       packages: write
@@ -61,8 +65,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           repository: ${{ matrix.repo }}
-      - uses: egao1980/cl-repository/.github/actions/setup-client@main
-      - uses: egao1980/cl-repository/.github/actions/setup-roswell@main
+      - uses: egao1980/cl-repository/.github/actions/setup-lisp@main
         with:
           sbcl-version: ${{ env.SBCL_VERSION }}
           roswell-version: ${{ env.ROSWELL_VERSION }}
