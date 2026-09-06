@@ -16,7 +16,7 @@ on:
       packager_version:
         description: "Packager image version"
         required: false
-        default: "0.16.0"
+        default: "latest"
         type: string
       publish_dialects:
         description: "Also publish sql-query-postgres / sql-query-sqlite3 (GHCR ACL still linked here post-split)"
